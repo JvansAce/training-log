@@ -2,6 +2,7 @@
 
 A single-page training log for the lean-bulk plan: Tuesday/Wednesday/Friday/Saturday lifting, Monday tennis, Thursday easy cardio, Sunday rest. Four pages — Today, Week, Progress, Setup. No build step, no dependencies, no backend.
 
+
 ## Files
 
 | File | Purpose |
