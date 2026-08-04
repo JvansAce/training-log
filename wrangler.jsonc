@@ -5,6 +5,10 @@
   "assets": {
     "directory": ".",
     "binding": "ASSETS"
+  },
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "fancy-bird-116f.cloudflareaccess.com",
+    "ACCESS_AUD": "paste-your-actual-aud-tag-here-no-quotes-around-your-value-just-the-string"
   }
 }
 
