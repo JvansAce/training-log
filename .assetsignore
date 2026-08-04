@@ -1,0 +1,9 @@
+functions/
+src/
+wrangler.jsonc
+schema.sql
+README.md
+DEPLOY.md
+DEPLOY-iOS.md
+.assetsignore
+node_modules/
