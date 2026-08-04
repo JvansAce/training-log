@@ -9,6 +9,13 @@
   "vars": {
     "ACCESS_TEAM_DOMAIN": "fancy-bird-116f.cloudflareaccess.com",
     "ACCESS_AUD": "71de02b82b80a7819ec86f825688d096aed37edc6a34aaed20664397293cf9b4"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "training-log",
+      "database_id": "8dccbcac-20f8-46cb-8da7-754b000b6170"
+    }
+  ]
 }
 
