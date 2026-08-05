@@ -182,4 +182,6 @@ Adding a fifth page takes two lines: write `VIEWS.myPage = () => \`...\`` and ad
 
 Give an exercise a `restSec` on its `SCHEDULE` day and a "Start rest timer" button appears under the checklist, with a small floating countdown widget.
 
-**After any edit, bump `CACHE` in `sw.js`** (`bnb-v1` → `bnb-v2`) or installed devices will keep serving the old version. Since the service worker no longer activates a new version instantly (see below), that's a one-time "New version available — Reload" banner rather than a silent swap.
+**After any edit, bump `CACHE` in `sw.js`** (`bnb-v7` → `bnb-v8`) or installed devices will keep serving the old version. CI fails the build if you forget. Since the service worker no longer activates a new version instantly, the update arrives as a "New version available — Reload" banner rather than a silent swap.
+
+**Which version am I actually running?** The footer ends with it — `WEEK 4 · 12 WEIGH-INS · SYNCED 18:04 · V7`. That's read out of Cache Storage, so it reports the worker genuinely serving the page, not a constant compiled into it: if it still says `V6` after you shipped `V7`, the old worker hasn't been replaced yet. The app also asks the browser to check for a new worker every time it's brought back to the foreground, so a deploy normally lands the next time you open it.

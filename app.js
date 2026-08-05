@@ -1122,10 +1122,30 @@ function wireSetup(){
   };
 }
 
+/* Read from Cache Storage rather than a constant in this file. A constant
+   would be a second thing to remember to bump alongside sw.js, and would
+   cheerfully report the new version while the old worker was still the one
+   actually serving you — which is precisely the question this is here to
+   answer. This reads whichever cache is really live. */
+let cacheVersion = '';
+async function readCacheVersion(){
+  try{
+    if(!('caches' in window)) return;
+    const verNum = k => parseInt(String(k).replace(/^bnb-v/,''),10) || 0;
+    const mine = (await caches.keys()).filter(k=>k.startsWith('bnb-')).sort((a,b)=>verNum(a)-verNum(b));
+    // Exactly one survives a completed activate; if a swap is mid-flight,
+    // report the newest rather than the one already being deleted.
+    const next = mine.length ? mine.at(-1).replace(/^bnb-/,'') : '';
+    if(next===cacheVersion) return;
+    cacheVersion = next;
+    updateFoot();
+  }catch(e){ /* Cache Storage blocked (private mode, plain http) — just omit it */ }
+}
 function updateFoot(){
   const el=document.getElementById('foot');
   if(!el) return;
-  el.textContent = `WEEK ${weeksIn()+1} · ${S.weights.length} WEIGH-INS · ${Sync.label()}`;
+  el.textContent = `WEEK ${weeksIn()+1} · ${S.weights.length} WEIGH-INS · ${Sync.label()}`
+    + (cacheVersion ? ` · ${cacheVersion.toUpperCase()}` : '');
 }
 
 /* ---------------- router ---------------- */
@@ -1234,14 +1254,23 @@ document.addEventListener('visibilitychange', ()=>{
     if(syncClock()) render();
     Sync.schedule(()=>S, adoptMerged, 600);
     Whoop.today().then(whoopRerenderIfShown);
+    // An installed PWA is resumed for weeks without a real navigation, and
+    // the browser's own update check is infrequent. Asking on resume is
+    // what makes a deploy show up the next time the app is opened rather
+    // than whenever the browser gets around to it.
+    if(swRegistration) swRegistration.update().catch(()=>{});
+    readCacheVersion();
   }
 });
 /* Catches the case where the app is left open and visible straight through
    midnight, so visibilitychange never fires. */
 setInterval(()=>{ if(syncClock()) render(); }, 60_000);
 
+let swRegistration = null;
+readCacheVersion();
 if('serviceWorker' in navigator && location.protocol==='https:'){
   navigator.serviceWorker.register('sw.js').then(reg=>{
+    swRegistration = reg;
     const showBar=worker=>{
       const bar=document.getElementById('updatebar');
       bar.hidden=false;
