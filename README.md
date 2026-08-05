@@ -24,6 +24,7 @@ A single-page training log for the lean-bulk plan: Tuesday/Wednesday/Friday/Satu
 | `schema.sql` | D1 tables — training state, WHOOP tokens, OAuth state |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
 | `DEPLOY.md` | Step-by-step deployment walkthrough — start there |
+| `test/state.test.mjs` | Committed regression suite for the server-side merge logic — `npm test` |
 
 ## Where the data lives
 
@@ -42,11 +43,13 @@ Setup → **Export file** still writes a JSON backup. Worth doing occasionally r
 The server merges rather than overwrites, because a training log is mostly additive:
 
 - **Weigh-ins and logged sets** merge by date. Two devices with different history end up with the union of both.
-- **Anything older than two days** is only ever added to. A tick recorded on one device can't be erased by a stale push from another.
-- **Today and yesterday** take the most recent write, so unticking something on the device in your hand actually sticks.
+- **Anything older than a few days** is only ever added to. A tick recorded on one device can't be erased by a stale push from another.
+- **Recent days** take the most recent write, so unticking something on the device in your hand actually sticks.
 - **Settings** (start date, pyramid cap, calorie adjustment) follow whichever record was touched most recently.
 
-The one honest limitation: because old days are additive, unticking an exercise from last week on one device won't propagate to the others. That trade buys you never silently losing a session, which is the failure that would actually matter.
+The one honest limitation: because old days are additive, unticking an exercise from last week on one device won't propagate to the others. That trade buys you never silently losing a session, which is the failure that would actually matter. Forgot to log a day entirely? Today's panel has a **back-fill** date picker for exactly that — it edits a past day's checklist and lifts directly instead of losing it.
+
+Setup → **Delete all data** also deletes your row on the server (not just the local copy) — see the Danger Zone note in-app for the one edge case that survives it.
 
 ## Hosting: Cloudflare Pages + Access
 
@@ -162,4 +165,6 @@ Everything is data at the top of `app.js`:
 
 Adding a fifth page takes two lines: write `VIEWS.myPage = () => \`...\`` and add `<a href="#/myPage" data-tab="myPage">Label</a>` to the tab bar. If it needs event handlers, add a `wireMyPage()` call in `render()`.
 
-**After any edit, bump `CACHE` in `sw.js`** (`bnb-v1` → `bnb-v2`) or the service worker will keep serving the old version.
+Give an exercise a `restSec` on its `SCHEDULE` day and a "Start rest timer" button appears under the checklist, with a small floating countdown widget.
+
+**After any edit, bump `CACHE` in `sw.js`** (`bnb-v1` → `bnb-v2`) or installed devices will keep serving the old version. Since the service worker no longer activates a new version instantly (see below), that's a one-time "New version available — Reload" banner rather than a silent swap.

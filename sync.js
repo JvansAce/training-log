@@ -7,6 +7,7 @@
 
 const Sync = (() => {
   const ENDPOINT = '/api/state';
+  const SYNCED_KEY = 'bnb.synced.v1';
   let status = 'idle';   // idle | syncing | ok | offline | unauthorized | unconfigured | absent
   let lastAt = null;
   let detail = '';
@@ -62,21 +63,46 @@ const Sync = (() => {
     return res.json();
   }
 
-  /* Returns merged state to adopt, or null if nothing to adopt. */
+  const hasSyncedBefore = () => { try{ return !!localStorage.getItem(SYNCED_KEY); }catch(e){ return false; } };
+  const markSynced = () => { try{ localStorage.setItem(SYNCED_KEY, '1'); }catch(e){} };
+
+  /* Returns merged state to adopt, or null if nothing to adopt.
+
+     Deliberately does NOT bail out early when status is already 'absent' or
+     'unconfigured' — those are set by the previous attempt's response, not
+     a permanent fact. Without a retry path, a device that first tries to
+     sync while a deploy is mid-flight gets stuck reporting "sync not
+     configured" for the rest of the page session, even after the deploy
+     finishes and the server would happily answer now. Every call below
+     re-derives status from what actually comes back. */
   async function run(local){
-    if (status === 'absent' || status === 'unconfigured') return null;
     if (!navigator.onLine) { set('offline'); return null; }
     set('syncing');
     try{
-      if (isFresh(local)){
+      // A device with no confirmed sync history can't trust its own
+      // updatedAt to safely win a same-day "newer wins" merge — it has no
+      // way to know whether the ticks it already has are the ONLY record of
+      // today, or a partial one alongside real history sitting on the
+      // server. So the very first sync always pulls, never pushes.
+      const neverSynced = !hasSyncedBefore();
+      if (neverSynced || isFresh(local)){
+        const startUpdatedAt = local.updatedAt || 0;
         const out = await call('GET');
         if (!out) return null;
         set('ok');
-        return out.state || null;
+        markSynced();
+        if (!out.state) return null;
+        // If a checkbox got ticked locally while this pull was in flight,
+        // don't blindly overwrite it with the (now stale) server copy —
+        // that edit's own save() already queued a follow-up push, and by
+        // then the server has a real baseline to merge against.
+        if ((local.updatedAt || 0) !== startUpdatedAt) return null;
+        return out.state;
       }
       const out = await call('PUT', local);
       if (!out) return null;
       set('ok');
+      markSynced();
       return out.state || null;
     }catch(e){
       /* Network exceptions carry no message worth showing. */
@@ -96,6 +122,9 @@ const Sync = (() => {
   return {
     run, schedule, label, state,
     onChange: fn => listeners.push(fn),
-    reset: () => { if (status === 'absent' || status === 'unconfigured') return; set('idle'); }
+    // Always clears to 'idle' — see the comment on run() for why 'absent'/
+    // 'unconfigured' must not be sticky. This just clears the last-known
+    // status; run() decides the real one from the next actual response.
+    reset: () => set('idle')
   };
 })();

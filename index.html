@@ -35,6 +35,18 @@
 </nav>
 
 <div class="toast" id="toast" role="status"></div>
+<div class="resttimer" id="resttimer" hidden role="timer">
+  <div class="rt-bar"></div>
+  <div class="rt-row">
+    <span class="rt-time">0:00</span>
+    <button id="rtAdd">+30s</button>
+    <button id="rtStop">Stop</button>
+  </div>
+</div>
+<div class="updatebar" id="updatebar" hidden role="status">
+  <span>New version available.</span>
+  <button id="updateBtn">Reload</button>
+</div>
 <script src="sync.js"></script>
 <script src="whoop.js"></script>
 <script src="app.js"></script>

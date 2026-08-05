@@ -15,7 +15,7 @@ const SCHEDULE = {
             {n:'Tennis',p:'play'},
             {n:'Core finisher (optional)',p:'hanging leg raises 3×12 · plank 3×45s'},
             {n:'Post-match shake',p:'30g whey + 300ml milk + banana'}]},
-  2:{label:'TU',color:'#E23B3B',title:'Upper · Strength',tag:'Rest 2–3 min',
+  2:{label:'TU',color:'#E23B3B',title:'Upper · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'The heavy day. Add weight or a rep whenever you hit the top of the range.',
      items:[{n:'Band pull-aparts + arm circles',p:'warm-up 2×15'},
             {n:'Weighted pull-ups',p:'4 × 5–8 — add weight at 8',id:'wpullup'},
@@ -23,7 +23,7 @@ const SCHEDULE = {
             {n:'Barbell or DB row',p:'4 × 8–10',id:'row'},
             {n:'Overhead press',p:'3 × 8–10',id:'ohp'},
             {n:'Dips',p:'3 × to 2 reps shy of failure',id:'dips'}]},
-  3:{label:'WE',color:'#E23B3B',title:'Lower · Strength',tag:'Rest 2–3 min',
+  3:{label:'WE',color:'#E23B3B',title:'Lower · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'If Monday tennis left you wrecked, swap this with Tuesday.',
      items:[{n:'Leg swings · hip circles · 90/90',p:'warm-up 5 min'},
             {n:'Squat or trap bar deadlift',p:'4 × 5–8',id:'squat'},
@@ -35,7 +35,7 @@ const SCHEDULE = {
      note:'Conversational pace. If WHOOP recovery is red, take the full rest instead — this is the first thing to drop.',
      items:[{n:'Zone 2',p:'20–35 min easy jog, bike or brisk hike'},
             {n:'Daily mobility',p:'see below'}]},
-  5:{label:'FR',color:'#E23B3B',title:'Upper · Volume',tag:'Rest 60–90s',
+  5:{label:'FR',color:'#E23B3B',title:'Upper · Volume',tag:'Rest 60–90s',restSec:75,
      note:'Chase the pump here. Lateral raises are what make the suit fit.',
      items:[{n:'Band pull-aparts',p:'warm-up 2×15'},
             {n:'Pull-ups',p:'4 × max reps',id:'pullup'},
@@ -81,17 +81,44 @@ const ADDINS = [
 
 /* ---------------- state ---------------- */
 const iso = d => d.toLocaleDateString('en-CA');
-const todayISO = iso(new Date());
+let todayISO = iso(new Date());
+let todayDow = new Date().getDay();
 const DEFAULTS = {startDate:todayISO, weights:[], logs:{}, lifts:{}, pyramidCap:6, calAdjust:0, updatedAt:0};
 let S = structuredClone(DEFAULTS);
-let viewing = new Date().getDay();
+let viewing = todayDow;
+let editingDate = null;   // set to an ISO date to back-fill a past day instead of today
+
+/* An installed PWA is resumed, not reloaded — it can sit open across
+   midnight for days. todayISO/todayDow are read by every write path
+   (dayLog, lift logging, weigh-in save), so if they never advance,
+   everything typed after midnight silently lands on yesterday's date.
+   Called before every render and on a slow interval/visibility check. */
+function syncClock(){
+  const t = iso(new Date());
+  if (t === todayISO) return false;
+  const newDow = new Date().getDay();
+  if (viewing === todayDow) viewing = newDow;   // was following "today" — keep following it
+  todayISO = t;
+  todayDow = newDow;
+  return true;
+}
 
 function load(){
   try{
     const raw = localStorage.getItem(STORE_KEY);
-    if(raw) S = Object.assign(structuredClone(DEFAULTS), JSON.parse(raw));
+    if(raw){
+      S = Object.assign(structuredClone(DEFAULTS), JSON.parse(raw));
+      // A parsed-but-wrong-shaped field (e.g. {"weights":null} from a
+      // half-written save) would otherwise throw on the line below, outside
+      // this try — and since that runs before the first render(), the app
+      // never draws anything again until someone clears storage by hand.
+      if(!Array.isArray(S.weights)) S.weights = [];
+      if(!S.logs || typeof S.logs !== 'object') S.logs = {};
+      if(!S.lifts || typeof S.lifts !== 'object') S.lifts = {};
+    }
   }catch(e){
     toast('Saved data could not be read. Starting fresh.');
+    S = structuredClone(DEFAULTS);
   }
   if(!S.weights.length) S.weights = [{d:todayISO, kg:79}];
 }
@@ -146,10 +173,10 @@ async function fetchIdentity(){
 }
 
 /* ---------------- helpers ---------------- */
-function dayLog(d=todayISO){
-  if(!S.logs[d]) S.logs[d]={done:[],fuel:false,mob:[]};
+function dayLog(d=editingDate||todayISO){
+  if(!S.logs[d]) S.logs[d]={done:[],fuel:false,mob:[],note:''};
   const l=S.logs[d];
-  l.done=l.done||[]; l.mob=l.mob||[];
+  l.done=l.done||[]; l.mob=l.mob||[]; l.note=l.note||'';
   return l;
 }
 function fuel(dow){
@@ -157,9 +184,13 @@ function fuel(dow){
   const cal=(rest?2900:3200)+(S.calAdjust||0), pro=170, fat=rest?90:95;
   return {cal,pro,fat,carb:Math.round((cal-pro*4-fat*9)/4),rest};
 }
-const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
+const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
 const sortW = () => [...S.weights].sort((a,b)=>a.d<b.d?-1:1);
-function latestAvg(){ const w=sortW().slice(-7); return avg(w.map(x=>x.kg)); }
+// A device that adopts a merged server state with zero weigh-ins anywhere
+// (e.g. a brand-new account synced before its first weigh-in) has no
+// weight to average — null rather than NaN so callers can show a placeholder.
+function latestAvg(){ const w=sortW().slice(-7); return w.length ? avg(w.map(x=>x.kg)) : null; }
+const fmtAvg = () => { const a=latestAvg(); return a==null ? '–' : a.toFixed(1); };
 function trend(){
   const w=sortW();
   if(w.length<2) return null;
@@ -179,6 +210,22 @@ function verdict(){
 const weeksIn = () => Math.max(0,Math.floor((new Date(todayISO)-new Date(S.startDate))/6048e5));
 const fmtSet = e => `${e.kg?e.kg+' kg':'BW'} × ${e.reps}`;
 const beats = (a,b) => ((a.kg||0)*1000+a.reps) > ((b.kg||0)*1000+b.reps);
+const escapeHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const MAX_SETS = 5;
+
+// A day's lift entry used to be one flat {d,kg,reps}. It's now {d,sets:[...]}
+// so a "4 x 8" prescription can actually be logged as four sets — this
+// reads either shape so nobody's history breaks on the day this shipped.
+function setsOf(entry){
+  if(!entry) return [];
+  if(Array.isArray(entry.sets)) return entry.sets;
+  if(entry.reps!=null) return [{kg:entry.kg, reps:entry.reps}];
+  return [];
+}
+function bestSet(entry){
+  const sets=setsOf(entry);
+  return sets.length ? sets.reduce((a,b)=>beats(b,a)?b:a) : null;
+}
 
 function itemsFor(dow){
   return SCHEDULE[dow].items.map(it=>{
@@ -187,26 +234,38 @@ function itemsFor(dow){
       p:'1 pull-up · 2 dips · 3 push-ups · 4 sit-ups · 5 squats, climbing each round'};
   });
 }
-function refText(id){
+function refText(id,activeDate){
   const h=S.lifts[id]||[];
-  const mine=h.filter(x=>x.d===todayISO).pop();
-  const last=h.filter(x=>x.d!==todayISO).pop();
-  if(!last) return mine?`logged ${fmtSet(mine)}`:'first entry — this becomes your benchmark';
-  let s=`last ${fmtSet(last)} · ${last.d.slice(5)}`;
-  if(mine&&beats(mine,last)) s+=' ▲ beaten';
+  const mine=h.find(x=>x.d===activeDate);
+  const last=[...h].filter(x=>x.d!==activeDate).sort((a,b)=>a.d<b.d?-1:1).pop();
+  const fmtAll=e=>setsOf(e).map(fmtSet).join(' · ');
+  if(!last) return mine?`logged ${fmtAll(mine)}`:'first entry — this becomes your benchmark';
+  let s=`last ${fmtAll(last)} · ${last.d.slice(5)}`;
+  const mb=bestSet(mine), lb=bestSet(last);
+  if(mb&&lb&&beats(mb,lb)) s+=' ▲ beaten';
   return s;
 }
-function logRow(id,isToday){
-  const h=S.lifts[id]||[];
-  const mine=h.filter(x=>x.d===todayISO).pop();
-  if(!isToday) return `<div class="logref">${refText(id)}</div>`;
-  return `<div class="logrow" data-log="${id}">
+function setRowHtml(id,i,s){
+  return `<div class="setrow" data-set="${i}">
+    <span class="setno">${i+1}</span>
     <input type="number" step="0.5" min="0" max="500" inputmode="decimal" placeholder="kg"
-      value="${mine&&mine.kg!=null?mine.kg:''}" data-lkg="${id}" aria-label="Weight in kg">
+      value="${s&&s.kg!=null?s.kg:''}" data-skg="${id}:${i}" aria-label="Set ${i+1} weight kg">
     <span class="mult">×</span>
     <input type="number" step="1" min="1" max="500" inputmode="numeric" placeholder="reps"
-      value="${mine?mine.reps:''}" data-lrep="${id}" aria-label="Reps">
-    <div class="logref">${refText(id)}</div>
+      value="${s&&s.reps!=null?s.reps:''}" data-srep="${id}:${i}" aria-label="Set ${i+1} reps">
+  </div>`;
+}
+function logRow(id,canEdit,activeDate){
+  if(!canEdit) return `<div class="logref">${refText(id,activeDate)}</div>`;
+  const mine=(S.lifts[id]||[]).find(x=>x.d===activeDate);
+  const mySets=setsOf(mine);
+  const shown=Math.max(1,mySets.length);
+  const rows=[];
+  for(let i=0;i<shown;i++) rows.push(setRowHtml(id,i,mySets[i]));
+  return `<div class="logrow" data-log="${id}">
+    <div class="setrows">${rows.join('')}</div>
+    ${shown<MAX_SETS?`<button type="button" class="addset" data-addset="${id}">+ set</button>`:''}
+    <div class="logref">${refText(id,activeDate)}</div>
   </div>`;
 }
 
@@ -249,7 +308,10 @@ function adherence(){
     let sessions=0;
     for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
       const l=S.logs[iso(d)];
-      if(l&&l.done&&l.done.length>=3) sessions++;
+      // Thu (cardio) and Sun (rest) only have 2 items — a flat >=3 makes
+      // them mathematically impossible to count as a session ever.
+      const need=Math.min(3, SCHEDULE[d.getDay()].items.length);
+      if(l&&l.done&&l.done.length>=need) sessions++;
     }
     bars.push(sessions);
   }
@@ -328,14 +390,59 @@ function whoopSetupPanel(){
   </section>`;
 }
 
+/* ---------------- rest timer ----------------
+   Floating widget lives outside #view (see index.html), so it survives a
+   route change while a rest is still counting down — wired once at boot,
+   not inside wireToday(). */
+let restTimer = { total:0, remaining:0, intervalId:null };
+function renderRestTimer(){
+  const el=document.getElementById('resttimer');
+  if(!el) return;
+  if(!restTimer.total){ el.hidden=true; return; }
+  el.hidden=false;
+  const r=Math.max(restTimer.remaining,0);
+  el.querySelector('.rt-time').textContent=fmtMMSS(r);
+  el.querySelector('.rt-bar').style.width=`${Math.max(0,(r/restTimer.total)*100)}%`;
+}
+function stopRestTimer(){
+  clearInterval(restTimer.intervalId);
+  restTimer={total:0,remaining:0,intervalId:null};
+  renderRestTimer();
+}
+function startRestTimer(sec){
+  clearInterval(restTimer.intervalId);
+  restTimer={total:sec,remaining:sec,intervalId:null};
+  renderRestTimer();
+  restTimer.intervalId=setInterval(()=>{
+    restTimer.remaining--;
+    if(restTimer.remaining<=0){
+      clearInterval(restTimer.intervalId);
+      restTimer.intervalId=null;
+      toast('Rest done.');
+      if(navigator.vibrate) navigator.vibrate([200,100,200]);
+    }
+    renderRestTimer();
+  },1000);
+}
+
 /* ---------------- views ---------------- */
 const VIEWS = {};
 
+const fmtMMSS = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+
 VIEWS.today = () => {
-  const dow=new Date().getDay(), log=dayLog(), sched=SCHEDULE[viewing];
-  const isToday=viewing===dow, items=itemsFor(viewing), f=fuel(viewing);
-  const tlog=dayLog(), tItems=itemsFor(dow);
+  const dow=new Date().getDay(), sched=SCHEDULE[viewing];
+  const isToday=viewing===dow;
+  // editingDate (back-filling a past day) always wins over the plain
+  // "is this the weekday I'm currently previewing" check — you can only
+  // ever be doing one or the other.
+  const canEdit = editingDate ? true : isToday;
+  const activeDate = editingDate || todayISO;
+  const log = dayLog(activeDate);
+  const items=itemsFor(viewing), f=fuel(viewing);
+  const tlog=dayLog(todayISO), tItems=itemsFor(dow);
   const pct=tItems.length?(tlog.done.length/tItems.length)*100:0;
+  const yesterday=(()=>{ const d=new Date(); d.setDate(d.getDate()-1); return iso(d); })();
 
   const spine=`<div class="spine">${ORDER.map((d,i)=>{
     const s=SCHEDULE[d];
@@ -345,24 +452,38 @@ VIEWS.today = () => {
       <div class="rib-dot" style="background:${s.color}"></div>
       <div class="rib-d">${s.label}</div></button>`}).join('')}</div>`;
 
+  const backfill = editingDate ? `
+    <div class="wrow backfill">
+      <span class="ptag">Editing ${editingDate}</span>
+      <button id="backfillDone">Back to today</button>
+    </div>` : `
+    <div class="wrow backfill">
+      <input type="date" id="backfillPick" max="${yesterday}" aria-label="Back-fill a past day">
+      <span class="ptag">forgot to log a day?</span>
+    </div>`;
+
   const v=verdict();
-  return spine + whoopBadge() + `
+  return spine + backfill + whoopBadge() + `
   <section class="panel">
     <div class="phead"><div class="ptitle">${sched.title}</div>
-      <div class="ptag">${isToday?'Today':sched.label+' · preview'} · ${sched.tag}</div></div>
+      <div class="ptag">${canEdit&&!editingDate?'Today':editingDate?editingDate.slice(5):sched.label+' · preview'} · ${sched.tag}</div></div>
     <div class="pnote">${sched.note}</div>
     ${items.map((it,i)=>`
-      <div class="ex${isToday&&log.done.includes(i)?' on':''}" data-ex="${i}" role="checkbox"
-           tabindex="0" aria-checked="${isToday&&log.done.includes(i)}">
+      <div class="ex${canEdit&&log.done.includes(i)?' on':''}" data-ex="${i}" role="checkbox"
+           tabindex="0" aria-checked="${canEdit&&log.done.includes(i)}">
         <div class="box">${CHECK}</div>
         <div class="ex-body"><div class="ex-name">${it.n}</div>
           ${it.p?`<div class="ex-pre">${it.p}</div>`:''}
-          ${it.id?logRow(it.id,isToday):''}</div>
+          ${it.id?logRow(it.id,canEdit,activeDate):''}</div>
       </div>`).join('')}
     ${viewing===6?`<div class="wrow"><button data-cap="-1">– round</button>
       <button data-cap="1">+ round</button>
       <span class="ptag">cap ${S.pyramidCap} · build to 10</span></div>`:''}
-    ${!isToday?`<div class="wrow"><button id="backtoday">Back to today</button></div>`:''}
+    ${sched.restSec&&canEdit?`<div class="wrow"><button id="restStart" data-sec="${sched.restSec}">Start rest timer · ${fmtMMSS(sched.restSec)}</button></div>`:''}
+    ${canEdit?`<div class="wrow" style="margin-top:14px">
+      <textarea id="dayNote" rows="2" placeholder="Notes for this session (optional)">${escapeHtml(log.note||'')}</textarea>
+    </div>`:log.note?`<div class="pnote"><b>Note:</b> ${escapeHtml(log.note)}</div>`:''}
+    ${!isToday&&!editingDate?`<div class="wrow"><button id="backtoday">Back to today</button></div>`:''}
   </section>
 
   <section class="panel">
@@ -373,7 +494,7 @@ VIEWS.today = () => {
       <div class="macro"><b>${f.carb}</b><span>carbs</span></div>
       <div class="macro"><b>${f.fat}</b><span>fat</span></div>
     </div>
-    ${isToday?`<div class="ex${log.fuel?' on':''}" data-fuel="1" role="checkbox" tabindex="0"
+    ${canEdit?`<div class="ex${log.fuel?' on':''}" data-fuel="1" role="checkbox" tabindex="0"
         aria-checked="${log.fuel}" style="border-top:1px solid var(--line);margin-top:14px">
       <div class="box">${CHECK}</div>
       <div class="ex-body"><div class="ex-name">Hit calories and protein today</div>
@@ -389,8 +510,8 @@ VIEWS.today = () => {
   <section class="panel">
     <div class="phead"><div class="ptitle">Mobility</div><div class="ptag">Daily · 5–10 min</div></div>
     ${MOBILITY.map((m,i)=>`
-      <div class="ex${isToday&&log.mob.includes(i)?' on':''}" data-mob="${i}" role="checkbox"
-           tabindex="0" aria-checked="${isToday&&log.mob.includes(i)}">
+      <div class="ex${canEdit&&log.mob.includes(i)?' on':''}" data-mob="${i}" role="checkbox"
+           tabindex="0" aria-checked="${canEdit&&log.mob.includes(i)}">
         <div class="box">${CHECK}</div>
         <div class="ex-body"><div class="ex-name">${m.n}</div><div class="ex-pre">${m.p}</div></div>
       </div>`).join('')}
@@ -398,7 +519,7 @@ VIEWS.today = () => {
 
   <section class="panel">
     <div class="phead"><div class="ptitle">Body weight</div><div class="ptag">7-day average</div></div>
-    <div class="bigstat"><div class="n">${latestAvg().toFixed(1)}<sub> kg</sub></div>
+    <div class="bigstat"><div class="n">${fmtAvg()}<sub> kg</sub></div>
       <div class="verdict ${v.cls}">${v.html}</div></div>
     ${spark()}
     <div class="wrow"><input type="number" id="wIn" step="0.1" min="40" max="200"
@@ -458,7 +579,7 @@ VIEWS.progress = () => {
   return `
   <section class="panel">
     <div class="phead"><div class="ptitle">Body weight</div><div class="ptag">${w.length} weigh-ins</div></div>
-    <div class="bigstat"><div class="n">${latestAvg().toFixed(1)}<sub> kg</sub></div>
+    <div class="bigstat"><div class="n">${fmtAvg()}<sub> kg</sub></div>
       <div class="verdict ${v.cls}">${v.html}</div></div>
     ${weightChart()}
     <div class="pnote">Since you started: <b>${gain>0?'+':''}${gain.toFixed(1)} kg</b>. Target for a lean bulk is +0.5–0.75 kg per month.</div>
@@ -467,19 +588,25 @@ VIEWS.progress = () => {
   <section class="panel">
     <div class="phead"><div class="ptitle">Consistency</div><div class="ptag">Sessions per week</div></div>
     ${adherence()}
-    <div class="pnote">A session counts once three or more items are ticked. Four green weeks in a row is the real win.</div>
+    <div class="pnote">A session counts once three items are ticked — or all of them, on the shorter cardio and rest days. Four green weeks in a row is the real win.</div>
   </section>
 
   <section class="panel">
     <div class="phead"><div class="ptitle">Top sets</div><div class="ptag">Best vs latest</div></div>
     ${logged.length?logged.map(id=>{
       const h=[...(S.lifts[id]||[])].sort((a,b)=>a.d<b.d?-1:1);
-      const best=h.reduce((a,b)=>beats(b,a)?b:a);
-      const last=h.at(-1);
-      const isBest=last===best||!beats(best,last);
+      const days=h.map(entry=>({entry, best:bestSet(entry)})).filter(x=>x.best);
+      // A hand-edited or malformed imported backup could carry an entry
+      // with no usable sets at all — skip the lift rather than crashing
+      // the whole Progress page on an empty-array reduce.
+      if(!days.length) return '';
+      const best=days.reduce((a,b)=>beats(b.best,a.best)?b:a);
+      const lastDay=days.at(-1);
+      const isBest=lastDay===best||!beats(best.best,lastDay.best);
+      const fmtAll=e=>setsOf(e).map(fmtSet).join(' · ');
       return `<div class="hist"><div class="hist-n">${named[id]||id}</div>
-        <div class="hist-v"><b>${fmtSet(last)}</b> ${isBest?'<span class="up">▲ best</span>':''}<br>
-        best ${fmtSet(best)} · ${h.length} entr${h.length===1?'y':'ies'}</div></div>`}).join('')
+        <div class="hist-v"><b>${fmtAll(lastDay.entry)}</b> ${isBest?'<span class="up">▲ best</span>':''}<br>
+        best ${fmtSet(best.best)} · ${h.length} entr${h.length===1?'y':'ies'}</div></div>`}).join('')
       :`<div class="empty">Log a set on the Today page and your progression appears here.</div>`}
   </section>`;
 };
@@ -491,7 +618,7 @@ VIEWS.setup = () => {
     syncing:'Talking to the server.',
     idle:'Not synced yet this session.',
     offline:`No connection to the server, so changes are queued locally.${sy.detail?' '+sy.detail:''}`,
-    unauthorized:'Your Access session lapsed. Reload the page to sign in again, then changes will sync.',
+    unauthorized:'Your Access session lapsed. Reload to sign in again, then changes will sync.',
     unconfigured:`The API is deployed but not configured. ${sy.detail||''}`,
     absent:'No sync API on this host — this copy stores everything locally only.'
   }[sy.status] || '';
@@ -510,8 +637,9 @@ VIEWS.setup = () => {
   <section class="panel">
     <div class="phead"><div class="ptitle">Sync</div><div class="ptag">${Sync.label()}</div></div>
     <div class="pnote">${syncCopy}</div>
-    <div class="pnote">Every device you sign into reads and writes the same record. Entries merge rather than overwrite, so a set logged on your phone in the garage survives a weigh-in typed on your laptop. Anything older than two days is only ever added to, never removed.</div>
-    ${sy.available?`<div class="wrow"><button class="primary" id="syncNow">Sync now</button>
+    <div class="pnote">Every device you sign into reads and writes the same record. Entries merge rather than overwrite, so a set logged on your phone in the garage survives a weigh-in typed on your laptop. Anything older than a few days is only ever added to, never removed.</div>
+    ${sy.status==='unauthorized'?`<div class="wrow"><button class="primary" id="reauth">Reload to sign in</button></div>`
+    :sy.available?`<div class="wrow"><button class="primary" id="syncNow">Sync now</button>
       <button id="pullNow">Pull from server</button></div>`:''}
   </section>
 
@@ -538,49 +666,73 @@ VIEWS.setup = () => {
 
   <section class="panel">
     <div class="phead"><div class="ptitle">Danger zone</div><div class="ptag">No undo</div></div>
-    <div class="pnote">Deletes every weigh-in, session tick and logged set on this device. If sync is on, the next push writes the emptied record to the server too. Export first.</div>
+    <div class="pnote">Deletes every weigh-in, session tick and logged set on this device, and deletes your record from the server if sync is on. A different device that's still offline and syncs later can still bring old data back — export first if that matters.</div>
     <div class="wrow"><button class="danger" id="reset">Delete all data</button></div>
   </section>`;
 };
 
 /* ---------------- wiring ---------------- */
 function wireToday(){
-  const dow=new Date().getDay(), isToday=viewing===dow, log=dayLog();
+  const dow=new Date().getDay(), isToday=viewing===dow;
+  const canEdit = editingDate ? true : isToday;
+  const activeDate = editingDate || todayISO;
+  const log = dayLog(activeDate);
   const toggle=(arr,i)=>{const k=arr.indexOf(i); k>-1?arr.splice(k,1):arr.push(i)};
   const bind=(el,fn)=>{
     el.onclick=fn;
     el.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();fn()}};
   };
 
-  document.querySelectorAll('.rib').forEach(b=>b.onclick=()=>{viewing=+b.dataset.d;render()});
+  document.querySelectorAll('.rib').forEach(b=>b.onclick=()=>{
+    viewing=+b.dataset.d; editingDate=null; render();
+  });
   document.querySelectorAll('[data-ex]').forEach(el=>bind(el,()=>{
-    if(!isToday) return; toggle(log.done,+el.dataset.ex); save(); render();
+    if(!canEdit) return; toggle(log.done,+el.dataset.ex); save(); render();
   }));
   document.querySelectorAll('[data-mob]').forEach(el=>bind(el,()=>{
-    if(!isToday) return; toggle(log.mob,+el.dataset.mob); save(); render();
+    if(!canEdit) return; toggle(log.mob,+el.dataset.mob); save(); render();
   }));
   const fu=document.querySelector('[data-fuel]');
   if(fu) bind(fu,()=>{log.fuel=!log.fuel; save(); render()});
+
+  const dn=document.getElementById('dayNote');
+  if(dn) dn.onchange=()=>{ log.note=dn.value; save(); };
+
+  function saveSets(row,id){
+    const sets=[];
+    row.querySelectorAll('.setrow').forEach(sr=>{
+      const kgRaw=sr.querySelector('[data-skg]').value;
+      const reps=parseInt(sr.querySelector('[data-srep]').value);
+      if(!isNaN(reps)&&reps>0){
+        const kg=kgRaw===''?null:parseFloat(kgRaw);
+        sets.push({kg:isNaN(kg)?null:kg, reps});
+      }
+    });
+    S.lifts[id]=(S.lifts[id]||[]).filter(x=>x.d!==activeDate);
+    if(sets.length) S.lifts[id].push({d:activeDate, sets});
+    save();
+    const ref=row.querySelector('.logref');
+    if(ref) ref.textContent=refText(id,activeDate);
+  }
 
   document.querySelectorAll('.logrow').forEach(row=>{
     row.onclick=e=>e.stopPropagation();
     row.onkeydown=e=>{e.stopPropagation(); if(e.key==='Enter') e.target.blur()};
     const id=row.dataset.log;
-    row.querySelectorAll('input').forEach(inp=>{
-      inp.onchange=()=>{
-        const kgRaw=row.querySelector('[data-lkg]').value;
-        const reps=parseInt(row.querySelector('[data-lrep]').value);
-        const kg=kgRaw===''?null:parseFloat(kgRaw);
-        S.lifts[id]=(S.lifts[id]||[]).filter(x=>x.d!==todayISO);
-        if(!isNaN(reps)&&reps>0){
-          S.lifts[id].push({d:todayISO,kg:isNaN(kg)?null:kg,reps});
-          inp.classList.add('saved');
-        }
-        save();
-        const ref=row.querySelector('.logref');
-        if(ref) ref.textContent=refText(id);
-      };
-    });
+    row.querySelectorAll('input').forEach(inp=>{ inp.onchange=()=>saveSets(row,id); });
+    const add=row.querySelector('[data-addset]');
+    if(add) add.onclick=e=>{
+      e.stopPropagation();
+      const setrows=row.querySelector('.setrows');
+      const i=setrows.children.length;
+      if(i>=MAX_SETS) return;
+      const wrap=document.createElement('div');
+      wrap.innerHTML=setRowHtml(id,i,null);
+      const newRow=wrap.firstElementChild;
+      setrows.appendChild(newRow);
+      newRow.querySelectorAll('input').forEach(inp=>{ inp.onchange=()=>saveSets(row,id); });
+      if(i+1>=MAX_SETS) add.remove();
+    };
   });
 
   document.querySelectorAll('[data-cap]').forEach(b=>b.onclick=()=>{
@@ -590,7 +742,21 @@ function wireToday(){
     S.calAdjust=(S.calAdjust||0)+ +b.dataset.cal; save(); render();
   });
   const bt=document.getElementById('backtoday');
-  if(bt) bt.onclick=()=>{viewing=new Date().getDay(); render()};
+  if(bt) bt.onclick=()=>{viewing=todayDow; render()};
+  const bfd=document.getElementById('backfillDone');
+  if(bfd) bfd.onclick=()=>{editingDate=null; viewing=todayDow; render()};
+  const bfp=document.getElementById('backfillPick');
+  if(bfp) bfp.onchange=()=>{
+    const d=bfp.value; if(!d) return;
+    editingDate=d;
+    // Appending a local (no "Z") time forces local-midnight parsing —
+    // new Date('YYYY-MM-DD') alone parses as UTC midnight and can land on
+    // the wrong weekday for negative UTC offsets.
+    viewing=new Date(d+'T00:00:00').getDay();
+    render();
+  };
+  const rs=document.getElementById('restStart');
+  if(rs) rs.onclick=()=>startRestTimer(+rs.dataset.sec);
 
   const wS=document.getElementById('wSave'), wI=document.getElementById('wIn');
   wS.onclick=()=>{
@@ -606,6 +772,8 @@ function wireToday(){
 function wireSetup(){
   const so=document.getElementById('signout');
   if(so) so.onclick=()=>{ location.href='/cdn-cgi/access/logout'; };
+  const ra=document.getElementById('reauth');
+  if(ra) ra.onclick=()=>location.reload();
 
   const wc=document.getElementById('whoopConnect');
   if(wc) wc.onclick=()=>Whoop.connect();
@@ -666,11 +834,19 @@ function wireSetup(){
     if(!d) return;
     S.startDate=d; save(); render(); toast('Start date saved.');
   };
-  document.getElementById('reset').onclick=()=>{
+  document.getElementById('reset').onclick=async ()=>{
     if(!confirm('Delete all logged data? This cannot be undone.')) return;
     S=structuredClone(DEFAULTS);
     S.weights=[{d:todayISO,kg:79}];
-    save(); render(); toast('All data deleted.');
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){}
+    render(); toast('All data deleted.');
+    // Best effort — the local wipe above is the part the person actually
+    // asked for; a failure here shouldn't block that. Deliberately not a
+    // save()+push: additive merge would otherwise let a stale device's old
+    // record survive the delete by pushing it right back.
+    if(Sync.state().available){
+      try{ await fetch('/api/state', { method:'DELETE', cache:'no-store' }); }catch(e){}
+    }
   };
 }
 
@@ -685,8 +861,18 @@ function route(){
   const h=(location.hash||'#/today').replace('#/','');
   return VIEWS[h]?h:'today';
 }
+// Ticking a box calls save()+render() to redraw its new state; scrolling to
+// top on every one of those (as opposed to an actual tab/day switch) used to
+// throw you back to the masthead mid-workout. Only scroll when what's being
+// shown actually changed.
+let lastRenderKey = null;
 function render(){
+  syncClock();
   const name=route();
+  const key = name==='today' ? `today:${viewing}:${editingDate||''}` : name;
+  const changedView = key !== lastRenderKey;
+  lastRenderKey = key;
+
   document.getElementById('view').innerHTML=VIEWS[name]();
   document.querySelectorAll('.tabs a').forEach(a=>
     a.classList.toggle('active',a.dataset.tab===name));
@@ -698,10 +884,17 @@ function render(){
 
   if(name==='today') wireToday();
   if(name==='setup') wireSetup();
-  window.scrollTo({top:0,behavior:'instant'});
+  if(changedView) window.scrollTo({top:0,behavior:'instant'});
 }
 
 window.addEventListener('hashchange',render);
+// The rest timer widget lives outside #view and survives route changes, so
+// its controls are wired once here rather than inside wireToday().
+document.getElementById('rtStop').onclick=stopRestTimer;
+document.getElementById('rtAdd').onclick=()=>{
+  if(!restTimer.total) return;
+  restTimer.total+=30; restTimer.remaining+=30; renderRestTimer();
+};
 load();
 render();
 
@@ -744,11 +937,41 @@ Whoop.today().then(whoopRerenderIfShown);
 window.addEventListener('online', ()=>{ Sync.reset(); Sync.schedule(()=>S, adoptMerged, 400); });
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible'){
+    if(syncClock()) render();
     Sync.schedule(()=>S, adoptMerged, 600);
     Whoop.today().then(whoopRerenderIfShown);
   }
 });
+/* Catches the case where the app is left open and visible straight through
+   midnight, so visibilitychange never fires. */
+setInterval(()=>{ if(syncClock()) render(); }, 60_000);
 
 if('serviceWorker' in navigator && location.protocol==='https:'){
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  navigator.serviceWorker.register('sw.js').then(reg=>{
+    const showBar=worker=>{
+      const bar=document.getElementById('updatebar');
+      bar.hidden=false;
+      document.getElementById('updateBtn').onclick=()=>worker.postMessage('SKIP_WAITING');
+    };
+    // A worker already sitting in "waiting" from before this page load
+    // (e.g. the update installed while the tab was in the background).
+    if(reg.waiting) showBar(reg.waiting);
+    reg.addEventListener('updatefound',()=>{
+      const nw=reg.installing;
+      if(!nw) return;
+      nw.addEventListener('statechange',()=>{
+        // navigator.serviceWorker.controller is only set once some worker
+        // has ever controlled this page — its absence means this install
+        // is the very first one, not an update, so there's nothing to
+        // announce.
+        if(nw.state==='installed' && navigator.serviceWorker.controller) showBar(nw);
+      });
+    });
+  }).catch(()=>{});
+  let reloading=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(reloading) return;
+    reloading=true;
+    location.reload();
+  });
 }
