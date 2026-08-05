@@ -61,10 +61,14 @@ export async function onRequestGet({ request, env }){
   const { token, reason } = await getValidToken(env, email);
   if (!token) return json({ connected: false, reason: reason || 'not_connected' });
 
-  const [recRes, cycRes, sleepRes] = await Promise.all([
+  // Workouts get a larger limit than the rest: several can happen in a day,
+  // and unlike recovery/cycle/sleep we want all of today's, not just the
+  // most recent one.
+  const [recRes, cycRes, sleepRes, workRes] = await Promise.all([
     whoopGet('/recovery?limit=1', token),
     whoopGet('/cycle?limit=1', token),
-    whoopGet('/activity/sleep?limit=1', token)
+    whoopGet('/activity/sleep?limit=1', token),
+    whoopGet('/activity/workout?limit=10', token)
   ]);
 
   if (!recRes.ok && recRes.status === 401){
@@ -103,6 +107,22 @@ export async function onRequestGet({ request, env }){
     sleep: sleepToday ? {
       state: sleepToday.score_state,
       performance_pct: sleepToday.score?.sleep_performance_percentage ?? null
-    } : null
+    } : null,
+    // Empty array rather than null when the call simply found nothing, so
+    // the client can tell "no workouts today" apart from "this WHOOP
+    // connection predates the read:workout scope and can't see them".
+    workouts: workRes.ok
+      ? (workRes.data.records || [])
+          .filter(wk => isToday(wk.start || wk.created_at))
+          .map(wk => ({
+            id: wk.id ?? null,
+            sport: wk.sport_name ?? null,
+            start: wk.start ?? null,
+            minutes: wk.start && wk.end
+              ? Math.round((new Date(wk.end) - new Date(wk.start)) / 60000) : null,
+            strain: wk.score?.strain ?? null,
+            kilojoule: wk.score?.kilojoule ?? null
+          }))
+      : null
   });
 }

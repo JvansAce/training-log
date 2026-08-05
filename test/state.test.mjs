@@ -148,6 +148,40 @@ describe('mergeState — settings follow the newer record', () => {
   });
 });
 
+describe('mergeState — recorded WHOOP readings merge additively by date', () => {
+  test('readings from two devices on different days both survive', () => {
+    const a = base({ updatedAt: 1, whoop: { [OLD]: { recovery: 71, strain: 12.1, sleep: 88, hrv: 44, rhr: 51 } } });
+    const b = base({ updatedAt: 2, whoop: { [TODAY]: { recovery: 55, strain: 9.4, sleep: 74, hrv: 38, rhr: 54 } } });
+    const m = mergeState(a, b);
+    assert.deepEqual(Object.keys(m.whoop).sort(), [OLD, TODAY].sort());
+    assert.equal(m.whoop[OLD].recovery, 71);
+    assert.equal(m.whoop[TODAY].recovery, 55);
+  });
+
+  test('the newer record does not wipe out other days it never saw', () => {
+    // The generic unknown-field spread would have replaced the whole whoop
+    // object with the newer side's, silently dropping months of history.
+    const server = base({ updatedAt: 1000, whoop: { [OLD]: { recovery: 71 }, [YESTERDAY]: { recovery: 60 } } });
+    const phone = base({ updatedAt: 9999, whoop: { [TODAY]: { recovery: 55 } } });
+    const m = mergeState(server, phone);
+    assert.deepEqual(Object.keys(m.whoop).sort(), [OLD, TODAY, YESTERDAY].sort());
+  });
+
+  test('a partial early read does not blank a complete later one', () => {
+    // Fetched before WHOOP finished scoring: recovery present, strain not.
+    const early = base({ updatedAt: 1, whoop: { [TODAY]: { recovery: 55, strain: null, sleep: null, hrv: null, rhr: null } } });
+    const late  = base({ updatedAt: 2, whoop: { [TODAY]: { recovery: 55, strain: 14.2, sleep: 91, hrv: 40, rhr: 52 } } });
+    assert.equal(mergeState(early, late).whoop[TODAY].strain, 14.2);
+    // ...and in the other direction, the stored complete value is kept.
+    assert.equal(mergeState(late, early).whoop[TODAY].strain, 14.2);
+  });
+
+  test('a record with no whoop data at all merges to an empty object, not undefined', () => {
+    const m = mergeState(base({ updatedAt: 1 }), base({ updatedAt: 2 }));
+    assert.deepEqual(m.whoop, {});
+  });
+});
+
 describe('mergeState — unknown fields survive (forward compatibility)', () => {
   test('a field neither this function nor the caller knows about is not dropped', () => {
     // Regression: mergeState used to rebuild a fixed-shape object from

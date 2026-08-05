@@ -19,12 +19,13 @@ A single-page training log for the lean-bulk plan: Tuesday/Wednesday/Friday/Satu
 | `functions/api/state.js` | Pages Function: authenticated read/write with server-side merge |
 | `functions/api/whoop/authorize.js` | Starts the WHOOP OAuth flow |
 | `functions/api/whoop/callback.js` | Handles WHOOP's redirect back, exchanges the code for tokens |
-| `functions/api/whoop/today.js` | Returns today's recovery/strain/sleep, refreshing the token if needed |
+| `functions/api/whoop/today.js` | Returns today's recovery/strain/sleep/workouts, refreshing the token if needed |
 | `functions/api/whoop/disconnect.js` | Revokes and deletes the stored WHOOP tokens |
 | `schema.sql` | D1 tables — training state, WHOOP tokens, OAuth state |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
 | `DEPLOY.md` | Step-by-step deployment walkthrough — start there |
 | `test/state.test.mjs` | Committed regression suite for the server-side merge logic — `npm test` |
+| `.github/workflows/ci.yml` | Runs the tests and the service-worker cache check on every push |
 
 ## Where the data lives
 
@@ -36,7 +37,7 @@ Two places, on purpose.
 
 Pushes are debounced by about 2.5 seconds, and also fire when you come back online or return to the tab. The footer shows the current state: `SYNCED 18:04`, `OFFLINE · CHANGES PENDING`, `LOCAL ONLY`, or `SIGN IN AGAIN TO SYNC`.
 
-Setup → **Export file** still writes a JSON backup. Worth doing occasionally regardless — sync protects you from losing a device, not from your own bad afternoon with the delete button.
+Setup → **Export file** still writes a JSON backup. Worth doing occasionally regardless — sync protects you from losing a device, not from your own bad afternoon with the delete button. The two **CSV** buttons next to it dump weigh-ins and per-set lift history for a spreadsheet; those are one-way, only the JSON can be imported back.
 
 ### How conflicts resolve
 
@@ -50,6 +51,14 @@ The server merges rather than overwrites, because a training log is mostly addit
 The one honest limitation: because old days are additive, unticking an exercise from last week on one device won't propagate to the others. That trade buys you never silently losing a session, which is the failure that would actually matter. Forgot to log a day entirely? Today's panel has a **back-fill** date picker for exactly that — it edits a past day's checklist and lifts directly instead of losing it.
 
 Setup → **Delete all data** also deletes your row on the server (not just the local copy) — see the Danger Zone note in-app for the one edge case that survives it.
+
+## How the gain rate is worked out
+
+The kg/month figure driving the "add 200 kcal" advice is a least-squares fit over the **last 28 days** of weigh-ins, needing at least 4 of them spanning 10+ days.
+
+Both details matter. A rolling window rather than the whole history, because comparing your earliest weigh-ins against your latest measures a straight line across the entire log — months in, that reports a lifetime average and will happily say *"on target"* through a multi-week stall, which is precisely when it should be telling you to eat more. And a fitted slope rather than first-versus-last, so one badly-timed water-weight morning at either end of the window doesn't swing the whole verdict.
+
+When the rate is below target, the Fuel panel offers a button to apply the suggested increase directly instead of making you count clicks on ±100.
 
 ## Hosting: Cloudflare Pages + Access
 
@@ -146,6 +155,12 @@ Optional. Connects your WHOOP account so the Today page shows live recovery, str
 3. Redeploy, then Setup → **Connect WHOOP**.
 
 Tokens live in the `whoop_tokens` D1 table, keyed by the same email Access already verified — never sent to or stored in the browser. WHOOP rotates the refresh token on every use; `functions/api/whoop/today.js` always persists the new one it's handed back, never the one it started with.
+
+Each day's scored recovery, strain, sleep, HRV and resting heart rate are also written into your own record, so the numbers accumulate into a history rather than vanishing when the ten-minute client cache expires. That history only starts from the first day the app records one.
+
+If WHOOP logs a workout, Today shows it with a button to mark the session complete. It never ticks anything on its own — WHOOP knows you trained, it doesn't know which items on the checklist you actually did.
+
+**Already connected before the `read:workout` scope was added?** A granted OAuth scope is fixed at connection time, so workouts stay invisible until you reconnect: Setup → Disconnect, then Connect WHOOP again. Recovery, strain and sleep keep working either way.
 
 ## Install on the phone
 

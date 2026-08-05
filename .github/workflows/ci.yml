@@ -1,0 +1,99 @@
+name: CI
+
+# Cloudflare Workers Builds deploys straight off a push to main, with no
+# gate in front of it. This runs the checks that would otherwise only
+# happen if someone remembered to run them locally — and this project's
+# whole workflow is editing files on github.com from a phone, so "locally"
+# often means "not at all".
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the previous commit to diff against for the cache check below.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No dependencies to install — node:test and node:assert are built in,
+      # which is why there's no lockfile and no npm ci step here.
+      - name: Run tests
+        run: npm test
+
+      - name: Syntax-check every JS file
+        run: |
+          set -euo pipefail
+          find . -name '*.js' -not -path './node_modules/*' -print0 \
+            | xargs -0 -n1 node --check
+          echo "all JS files parse"
+
+      # The service worker serves the app shell cache-first, so a shipped
+      # change to any of these files is invisible on installed devices until
+      # CACHE changes. Forgetting the bump has bitten this project before —
+      # it's called out three separate times across the docs.
+      - name: Service worker cache must be bumped when the shell changes
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+
+          # New branch, first push, or a force-push can leave BASE unusable.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No usable base commit to diff against — skipping."
+            exit 0
+          fi
+
+          CHANGED="$(git diff --name-only "$BASE" HEAD)"
+          SHELL_RE='^(app\.js|app\.css|sync\.js|whoop\.js|index\.html)$'
+
+          if ! echo "$CHANGED" | grep -qE "$SHELL_RE"; then
+            echo "No app-shell files changed."
+            exit 0
+          fi
+
+          echo "Shell files changed:"
+          echo "$CHANGED" | grep -E "$SHELL_RE" | sed 's/^/  /'
+
+          OLD_CACHE="$(git show "$BASE:sw.js" 2>/dev/null | grep -oE "const CACHE = '[^']+'" || true)"
+          NEW_CACHE="$(grep -oE "const CACHE = '[^']+'" sw.js || true)"
+
+          if [ -z "$NEW_CACHE" ]; then
+            echo "::error file=sw.js::Could not find the CACHE constant in sw.js."
+            exit 1
+          fi
+
+          if [ "$OLD_CACHE" = "$NEW_CACHE" ]; then
+            echo "::error file=sw.js::App-shell files changed but CACHE in sw.js is unchanged ($NEW_CACHE). Installed devices will keep serving the old version until it is bumped."
+            exit 1
+          fi
+
+          echo "CACHE bumped: ${OLD_CACHE:-<none>} -> $NEW_CACHE"
+
+      # assets.directory is the repo root, so anything not listed in
+      # .assetsignore is served publicly. Nothing enforces that list.
+      - name: Server-side files must be hidden from the asset layer
+        run: |
+          set -euo pipefail
+          fail=0
+          for path in functions src test wrangler.jsonc package.json schema.sql; do
+            [ -e "$path" ] || continue
+            if ! grep -qE "^${path}/?$" .assetsignore; then
+              echo "::error file=.assetsignore::'$path' exists but is not listed in .assetsignore — it would be served as a public static file."
+              fail=1
+            fi
+          done
+          [ "$fail" = "0" ] && echo ".assetsignore covers every non-public path"
+          exit $fail

@@ -6,7 +6,11 @@
 import { identify, htmlError } from '../../_shared.js';
 
 const AUTH_URL = 'https://api.prod.whoop.com/oauth/oauth2/auth';
-const SCOPES = 'offline read:recovery read:cycles read:sleep read:profile';
+// read:workout is already approved on the WHOOP developer app; it backs the
+// "WHOOP saw you train" prompt on Today. Adding a scope only takes effect
+// for connections made after this deploys — an already-connected account
+// keeps its old grant until it reconnects from Setup.
+const SCOPES = 'offline read:recovery read:cycles read:sleep read:profile read:workout';
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
 export async function onRequestGet({ request, env }){

@@ -1,6 +1,7 @@
 functions/
 src/
 test/
+.github/
 wrangler.jsonc
 package.json
 schema.sql

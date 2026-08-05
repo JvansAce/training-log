@@ -49,7 +49,7 @@ export function mergeState(stored, incoming){
     startDate : newer.startDate  ?? older.startDate  ?? null,
     pyramidCap: newer.pyramidCap ?? older.pyramidCap ?? 6,
     calAdjust : newer.calAdjust  ?? older.calAdjust  ?? 0,
-    weights: [], logs: {}, lifts: {}
+    weights: [], logs: {}, lifts: {}, whoop: {}
   };
 
   const wmap = new Map();
@@ -82,6 +82,22 @@ export function mergeState(stored, incoming){
     ((a.lifts || {})[id] || []).forEach(e => m.set(e.d, e));
     ((b.lifts || {})[id] || []).forEach(e => m.set(e.d, e));
     out.lifts[id] = [...m.values()].sort((x, y) => x.d < y.d ? -1 : 1);
+  }
+
+  // Recorded WHOOP readings, keyed by date. Purely additive across devices:
+  // both read the same WHOOP account, so a disagreement on a given day just
+  // means one of them fetched before the score settled. Prefer whichever
+  // side actually has a value per field, so a partial early read can't blank
+  // a complete later one. The recency rules above deliberately don't apply —
+  // this is observed history, not something anyone edits.
+  const whoopDates = new Set([...Object.keys(a.whoop || {}), ...Object.keys(b.whoop || {})]);
+  for (const d of whoopDates){
+    const wa = (a.whoop || {})[d] || {}, wb = (b.whoop || {})[d] || {};
+    const pick = k => wb[k] ?? wa[k] ?? null;
+    out.whoop[d] = {
+      recovery: pick('recovery'), strain: pick('strain'),
+      sleep: pick('sleep'), hrv: pick('hrv'), rhr: pick('rhr')
+    };
   }
   return out;
 }
