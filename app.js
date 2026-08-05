@@ -891,6 +891,8 @@ VIEWS.setup = () => {
   <section class="panel">
     <div class="phead"><div class="ptitle">Install</div><div class="ptag">Home screen</div></div>
     <div class="pnote">iOS: Share → Add to Home Screen. Android: menu → Install app. It then opens fullscreen and works offline in the gym.</div>
+    <div class="pnote">Running <b>${cacheVersion ? cacheVersion.toUpperCase() : 'an unknown version'}</b>. If an update refuses to take — the banner keeps coming back, or a change you know shipped isn't here — this throws away the offline cache and starts clean. <b>Your log is not touched</b>, and it re-downloads on the next load.</div>
+    <div class="wrow"><button id="forceUpdate">Force update</button></div>
   </section>
 
   <section class="panel">
@@ -1014,6 +1016,31 @@ function wireToday(){
 function wireSetup(){
   const so=document.getElementById('signout');
   if(so) so.onclick=()=>{ location.href='/cdn-cgi/access/logout'; };
+  /* The last-resort escape hatch. Getting a stuck service worker unstuck
+     otherwise means Settings → Safari → Advanced → Website Data, which is
+     both hard to find on a phone and wipes localStorage along with it.
+     This tears down only the worker and its caches — the log lives in
+     localStorage and is deliberately left alone. */
+  const fu=document.getElementById('forceUpdate');
+  if(fu) fu.onclick=async()=>{
+    if(!confirm('Throw away the offline cache and reload?\n\nYour training log is not affected.')) return;
+    fu.disabled=true;
+    try{
+      if('serviceWorker' in navigator){
+        const regs=await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r=>r.unregister().catch(()=>{})));
+      }
+      if('caches' in window){
+        const keys=await caches.keys();
+        await Promise.all(keys.map(k=>caches.delete(k).catch(()=>{})));
+      }
+    }catch(e){ /* fall through and reload anyway — a partial teardown still helps */ }
+    // replace() rather than reload(): the query string defeats any HTTP
+    // cache, and not leaving a history entry means Back can't return to a
+    // page served by the worker that was just unregistered.
+    location.replace(`${location.pathname}?fresh=${Date.now()}${location.hash}`);
+  };
+
   const ra=document.getElementById('reauth');
   // A plain reload can be answered straight from the service worker cache,
   // which is exactly the trap this button exists to get out of. The query

@@ -1,0 +1,21 @@
+# Consumed by Cloudflare's asset layer, not served as a file.
+#
+# The service worker script is the one thing the browser fetches on its own
+# to decide whether an update exists. If an intermediate cache hands back a
+# stale copy, the browser either never notices a new version or keeps seeing
+# a "changed" script and reinstalls in a loop, leaving a worker permanently
+# stuck in "waiting" and an update banner that will not go away.
+/sw.js
+  Cache-Control: no-cache, must-revalidate
+
+# Same reasoning for the shell: it is small, and it is what points at every
+# other asset. The service worker keeps the offline copy; the network copy
+# should always be current.
+/
+  Cache-Control: no-cache, must-revalidate
+/index.html
+  Cache-Control: no-cache, must-revalidate
+
+# The manifest changes rarely but is cheap to revalidate.
+/manifest.webmanifest
+  Cache-Control: no-cache, must-revalidate
