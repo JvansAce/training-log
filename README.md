@@ -5,6 +5,7 @@ A single-page training log for the lean-bulk plan: Tuesday/Wednesday/Friday/Satu
 
 ## Files
 
+
 | File | Purpose |
 | --- | --- |
 | `index.html` | Shell: masthead, view container, tab bar |
