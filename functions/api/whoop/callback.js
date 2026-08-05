@@ -4,7 +4,7 @@
    with a status the app can toast, or fall back to a small readable page
    for cases the app was never loaded (e.g. Access itself rejected it). */
 
-import { htmlError } from '../../_shared.js';
+import { identify, htmlError } from '../../_shared.js';
 
 const TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token';
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
@@ -34,6 +34,15 @@ export async function onRequestGet({ request, env }){
   if (!env.WHOOP_CLIENT_ID || !env.WHOOP_CLIENT_SECRET){
     return htmlError('WHOOP_CLIENT_ID / WHOOP_CLIENT_SECRET are not both set on this project.');
   }
+
+  // Every other endpoint re-verifies Access itself rather than trusting a
+  // stored value — this one shouldn't be the exception. The state row
+  // proves an authorize call happened for some email; this proves the
+  // browser completing the redirect right now is signed in as that email.
+  let email;
+  try { email = await identify(request, env); }
+  catch (e){ return htmlError(e.message, e.status || 401); }
+  if (email !== row.email) return back('error');
 
   const redirectUri = new URL('/api/whoop/callback', request.url).toString();
   const body = new URLSearchParams({
@@ -65,7 +74,7 @@ export async function onRequestGet({ request, env }){
        expires_at = excluded.expires_at,
        scope = excluded.scope,
        updated_at = excluded.updated_at`
-  ).bind(row.email, tok.access_token, tok.refresh_token, expiresAt, tok.scope || '', Date.now()).run();
+  ).bind(email, tok.access_token, tok.refresh_token, expiresAt, tok.scope || '', Date.now()).run();
 
   return back('connected');
 }

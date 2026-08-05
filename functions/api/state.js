@@ -17,8 +17,12 @@
 
 import { identify, json } from '../_shared.js';
 
-const RECENT_DAYS = 2;          // within this window, latest write wins
-const MAX_BODY = 2_000_000;     // 2 MB ceiling on a pushed state
+// Within this window, latest write wins rather than additive-union. 2 would
+// match the client's own "recent" window exactly, but this runs in a Worker
+// (UTC) while client dates are local calendar days — 3 absorbs that skew
+// without needing to thread a timezone through every request.
+const RECENT_DAYS = 3;
+const MAX_BODY = 2_000_000;     // 2 MB ceiling on a pushed state, measured in bytes
 
 /* ---------- merge ---------- */
 const daysAgo = n => {
@@ -35,7 +39,12 @@ export function mergeState(stored, incoming){
   const older = newer === b ? a : b;
   const cutoff = daysAgo(RECENT_DAYS);
 
+  // Spread both records first so any field neither side of this function
+  // knows about (a future addition to the client's state shape) survives
+  // the round trip instead of being silently dropped — then overwrite the
+  // fields below with the real merge logic.
   const out = {
+    ...older, ...newer,
     updatedAt : Math.max(a.updatedAt || 0, b.updatedAt || 0),
     startDate : newer.startDate  ?? older.startDate  ?? null,
     pyramidCap: newer.pyramidCap ?? older.pyramidCap ?? 6,
@@ -52,13 +61,17 @@ export function mergeState(stored, incoming){
   for (const d of dates){
     const la = (a.logs || {})[d], lb = (b.logs || {})[d];
     if (d >= cutoff){
-      const pick = (newer.logs || {})[d] ?? (older.logs || {})[d];
-      out.logs[d] = { done: pick.done || [], mob: pick.mob || [], fuel: !!pick.fuel };
+      // ?? {} guards a stored/incoming log entry that is explicitly null
+      // (corrupt client write) rather than merely absent — without it this
+      // throws and the account's sync is broken until the row is hand-edited.
+      const pick = (newer.logs || {})[d] ?? (older.logs || {})[d] ?? {};
+      out.logs[d] = { done: pick.done || [], mob: pick.mob || [], fuel: !!pick.fuel, note: pick.note || '' };
     } else {
       out.logs[d] = {
         done: [...new Set([...(la?.done || []), ...(lb?.done || [])])].sort((p, q) => p - q),
         mob : [...new Set([...(la?.mob  || []), ...(lb?.mob  || [])])].sort((p, q) => p - q),
-        fuel: !!(la?.fuel || lb?.fuel)
+        fuel: !!(la?.fuel || lb?.fuel),
+        note: la?.note || lb?.note || ''
       };
     }
   }
@@ -85,6 +98,9 @@ async function writeState(env, email, state){
      ON CONFLICT(email) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`
   ).bind(email, JSON.stringify(state), Date.now()).run();
 }
+async function deleteState(env, email){
+  await env.DB.prepare('DELETE FROM state WHERE email = ?').bind(email).run();
+}
 
 /* ---------- handlers ---------- */
 export async function onRequestGet({ request, env }){
@@ -104,7 +120,9 @@ export async function onRequestPut({ request, env }){
   if (!env.DB) return json({ error: 'No D1 binding named DB on this project.' }, 503);
 
   const raw = await request.text();
-  if (raw.length > MAX_BODY) return json({ error: 'State too large.' }, 413);
+  // .length counts UTF-16 code units, not bytes — undercounts anything
+  // multi-byte and would let a payload past MAX_BODY that's actually larger.
+  if (new TextEncoder().encode(raw).length > MAX_BODY) return json({ error: 'State too large.' }, 413);
 
   let incoming;
   try { incoming = JSON.parse(raw); }
@@ -117,7 +135,17 @@ export async function onRequestPut({ request, env }){
   return json({ email, state: merged, merged: true });
 }
 
+export async function onRequestDelete({ request, env }){
+  let email;
+  try { email = await identify(request, env); }
+  catch (e){ return json({ error: e.message }, e.status || 401); }
+  if (!env.DB) return json({ error: 'No D1 binding named DB on this project.' }, 503);
+
+  await deleteState(env, email);
+  return json({ deleted: true });
+}
+
 export const onRequestOptions = () => new Response(null, {
   status: 204,
-  headers: { allow: 'GET, PUT, OPTIONS' }
+  headers: { allow: 'GET, PUT, DELETE, OPTIONS' }
 });

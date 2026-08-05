@@ -35,9 +35,13 @@ async function getValidToken(env, email){
 
   const tok = await res.json();
   const expiresAt = Date.now() + (tok.expires_in || 3600) * 1000 - 60_000;
+  // WHOOP is expected to always send a fresh refresh_token, but if a
+  // response ever omits one, falling back to the still-valid one we had
+  // beats writing NULL into a NOT NULL column and breaking the account.
+  const refreshToken = tok.refresh_token || row.refresh_token;
   await env.DB.prepare(
     `UPDATE whoop_tokens SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = ? WHERE email = ?`
-  ).bind(tok.access_token, tok.refresh_token, expiresAt, Date.now(), email).run();
+  ).bind(tok.access_token, refreshToken, expiresAt, Date.now(), email).run();
 
   return { token: tok.access_token };
 }
@@ -74,22 +78,31 @@ export async function onRequestGet({ request, env }){
   const cycle    = cycRes.ok ? cycRes.data.records?.[0]  : null;
   const sleep    = sleepRes.ok ? sleepRes.data.records?.[0] : null;
 
+  // ?limit=1 returns the single most recent record ever, with no date
+  // filter — before today's recovery has scored, that's yesterday's, and
+  // without this check it gets displayed as if it were today's, including
+  // driving the "recovery is red, take it easy" advice off a stale number.
+  const isToday = ts => !!ts && new Date(ts).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+  const recoveryToday = recovery && isToday(recovery.created_at) ? recovery : null;
+  const cycleToday    = cycle    && isToday(cycle.start    || cycle.created_at) ? cycle    : null;
+  const sleepToday    = sleep    && isToday(sleep.start    || sleep.created_at) ? sleep    : null;
+
   return json({
     connected: true,
     as_of: new Date().toISOString(),
-    recovery: recovery ? {
-      state: recovery.score_state,
-      score: recovery.score?.recovery_score ?? null,
-      hrv_ms: recovery.score?.hrv_rmssd_milli ?? null,
-      rhr: recovery.score?.resting_heart_rate ?? null
+    recovery: recoveryToday ? {
+      state: recoveryToday.score_state,
+      score: recoveryToday.score?.recovery_score ?? null,
+      hrv_ms: recoveryToday.score?.hrv_rmssd_milli ?? null,
+      rhr: recoveryToday.score?.resting_heart_rate ?? null
     } : null,
-    strain: cycle ? {
-      state: cycle.score_state,
-      value: cycle.score?.strain ?? null
+    strain: cycleToday ? {
+      state: cycleToday.score_state,
+      value: cycleToday.score?.strain ?? null
     } : null,
-    sleep: sleep ? {
-      state: sleep.score_state,
-      performance_pct: sleep.score?.sleep_performance_percentage ?? null
+    sleep: sleepToday ? {
+      state: sleepToday.score_state,
+      performance_pct: sleepToday.score?.sleep_performance_percentage ?? null
     } : null
   });
 }

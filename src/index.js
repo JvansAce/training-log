@@ -7,6 +7,7 @@ import * as whoopDisconnect from '../functions/api/whoop/disconnect.js';
 const routes = {
   'GET /api/state': state.onRequestGet,
   'PUT /api/state': state.onRequestPut,
+  'DELETE /api/state': state.onRequestDelete,
   'OPTIONS /api/state': state.onRequestOptions,
   'GET /api/whoop/authorize': whoopAuthorize.onRequestGet,
   'GET /api/whoop/callback': whoopCallback.onRequestGet,

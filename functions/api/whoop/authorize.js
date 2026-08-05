@@ -7,6 +7,7 @@ import { identify, htmlError } from '../../_shared.js';
 
 const AUTH_URL = 'https://api.prod.whoop.com/oauth/oauth2/auth';
 const SCOPES = 'offline read:recovery read:cycles read:sleep read:profile';
+const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
 export async function onRequestGet({ request, env }){
   let email;
@@ -15,6 +16,13 @@ export async function onRequestGet({ request, env }){
 
   if (!env.WHOOP_CLIENT_ID) return htmlError('WHOOP_CLIENT_ID is not set on this project.');
   if (!env.DB) return htmlError('No D1 binding named DB on this project.');
+
+  // No cron in this project to sweep these — an abandoned or denied flow
+  // otherwise leaves its row behind forever. Piggyback the cleanup on the
+  // one call site that's guaranteed to run regularly.
+  await env.DB.prepare(
+    `DELETE FROM whoop_oauth_state WHERE created_at < ?`
+  ).bind(Date.now() - STATE_MAX_AGE_MS).run();
 
   // Proves the /callback request that comes back really followed from an
   // authorize call we issued for this email, not a forged or replayed one.

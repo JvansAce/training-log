@@ -1,6 +1,8 @@
 functions/
 src/
+test/
 wrangler.jsonc
+package.json
 schema.sql
 README.md
 DEPLOY.md

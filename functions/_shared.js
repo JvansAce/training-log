@@ -17,8 +17,8 @@ const b64uToJson = s => JSON.parse(new TextDecoder().decode(b64uToBytes(s)));
 
 /* ---------- JWKS, cached in the isolate ---------- */
 let jwksCache = { at: 0, keys: null, domain: '' };
-async function getKeys(teamDomain){
-  const fresh = Date.now() - jwksCache.at < 3600_000;
+async function getKeys(teamDomain, forceRefresh = false){
+  const fresh = !forceRefresh && Date.now() - jwksCache.at < 3600_000;
   if (fresh && jwksCache.keys && jwksCache.domain === teamDomain) return jwksCache.keys;
   const res = await fetch(`https://${teamDomain}/cdn-cgi/access/certs`);
   if (!res.ok) throw new Error('cannot reach Access certs');
@@ -34,7 +34,16 @@ async function verifyAccessJwt(token, teamDomain, aud){
   const header = b64uToJson(h);
   if (header.alg !== 'RS256') throw new Error('unexpected algorithm');
 
-  const jwk = (await getKeys(teamDomain)).find(k => k.kid === header.kid);
+  let keys = await getKeys(teamDomain);
+  let jwk = keys.find(k => k.kid === header.kid);
+  if (!jwk){
+    // Access rotates its signing keys occasionally; a kid the hour-old
+    // cache doesn't recognize might just be a rotation, not a bad token —
+    // one forced refetch tells the difference instead of 401ing every
+    // request for up to an hour.
+    keys = await getKeys(teamDomain, true);
+    jwk = keys.find(k => k.kid === header.kid);
+  }
   if (!jwk) throw new Error('signing key not found');
 
   const key = await crypto.subtle.importKey(
@@ -80,11 +89,15 @@ export const json = (body, status = 200) => new Response(JSON.stringify(body), {
   headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }
 });
 
+const escapeHtml = s => String(s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 /* For endpoints reached by a full page navigation (OAuth redirects) rather
    than fetch — a JSON error body there would just render as raw text with
-   nothing to click, so these get a minimal readable page instead. */
+   nothing to click, so these get a minimal readable page instead. Every
+   caller today passes a static string, but escaping keeps it that way. */
 export const htmlError = (msg, status = 503) => new Response(
   `<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;background:#141824;color:#EDE7DB;padding:2rem;line-height:1.5;max-width:32rem;margin:0 auto">
-  <p>${msg}</p><p><a href="/#/setup" style="color:#4C7BE8">Back to Setup</a></p></body>`,
+  <p>${escapeHtml(msg)}</p><p><a href="/#/setup" style="color:#4C7BE8">Back to Setup</a></p></body>`,
   { status, headers: { 'content-type': 'text/html' } }
 );
