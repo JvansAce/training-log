@@ -891,8 +891,10 @@ VIEWS.setup = () => {
   <section class="panel">
     <div class="phead"><div class="ptitle">Install</div><div class="ptag">Home screen</div></div>
     <div class="pnote">iOS: Share → Add to Home Screen. Android: menu → Install app. It then opens fullscreen and works offline in the gym.</div>
-    <div class="pnote">Running <b>${cacheVersion ? cacheVersion.toUpperCase() : 'an unknown version'}</b>. If an update refuses to take — the banner keeps coming back, or a change you know shipped isn't here — this throws away the offline cache and starts clean. <b>Your log is not touched</b>, and it re-downloads on the next load.</div>
-    <div class="wrow"><button id="forceUpdate">Force update</button></div>
+    <div class="pnote">Running <b>${cacheVersion ? cacheVersion.toUpperCase() : 'an unknown version'}</b>${pendingVersion && pendingVersion!==cacheVersion ? `, with <b>${pendingVersion.toUpperCase()}</b> installed and waiting to take over` : ''}. If an update refuses to take — the banner keeps coming back, or a change you know shipped isn't here — this throws away the offline cache and starts clean. <b>Your log is not touched</b>, and it re-downloads on the next load.</div>
+    <div class="wrow"><button id="forceUpdate">Force update</button>
+      <button id="swDiag">Worker details</button></div>
+    <pre class="diag" id="swDiagOut" hidden></pre>
   </section>
 
   <section class="panel">
@@ -1041,6 +1043,38 @@ function wireSetup(){
     location.replace(`${location.pathname}?fresh=${Date.now()}${location.hash}`);
   };
 
+  /* Dumps the actual service worker state. Every round of "the update won't
+     take" so far has been diagnosed by inference from screenshots; this
+     makes the app say it outright. */
+  const sd=document.getElementById('swDiag');
+  if(sd) sd.onclick=async()=>{
+    const out=document.getElementById('swDiagOut');
+    out.hidden=false;
+    out.textContent='reading…';
+    const lines=[];
+    try{
+      lines.push(`page       ${location.href}`);
+      lines.push(`sw support ${'serviceWorker' in navigator}`);
+      if('serviceWorker' in navigator){
+        const regs=await navigator.serviceWorker.getRegistrations();
+        lines.push(`registrations ${regs.length}`);
+        const ctrl=navigator.serviceWorker.controller;
+        lines.push(`controller ${ctrl ? (await askVersion(ctrl)) || 'no answer' : 'none'}`);
+        for(const [i,r] of regs.entries()){
+          lines.push(`  [${i}] scope ${r.scope}`);
+          for(const k of ['installing','waiting','active']){
+            const w=r[k];
+            lines.push(`      ${k.padEnd(10)} ${w ? `${w.state} · ${(await askVersion(w))||'no answer'}` : '—'}`);
+          }
+        }
+      }
+      if('caches' in window) lines.push(`caches     ${(await caches.keys()).join(', ')||'none'}`);
+      lines.push(`online     ${navigator.onLine}`);
+      lines.push(`sync       ${Sync.label()}`);
+    }catch(e){ lines.push(`error      ${e && e.message}`); }
+    out.textContent=lines.join('\n');
+  };
+
   const ra=document.getElementById('reauth');
   // A plain reload can be answered straight from the service worker cache,
   // which is exactly the trap this button exists to get out of. The query
@@ -1153,24 +1187,42 @@ function wireSetup(){
   };
 }
 
-/* Read from Cache Storage rather than a constant in this file. A constant
-   would be a second thing to remember to bump alongside sw.js, and would
-   cheerfully report the new version while the old worker was still the one
-   actually serving you — which is precisely the question this is here to
-   answer. This reads whichever cache is really live. */
+/* Ask a worker directly which version it is. Reading Cache Storage instead
+   was wrong in the one situation that matters: while an update is pending,
+   both the running version's cache and the incoming one exist side by side,
+   so the page reported the version that was about to arrive as though it
+   were already serving — and had no way to tell a genuine pending update
+   from a phantom one. Returns null for workers older than this change, or
+   if the worker doesn't answer. */
+function askVersion(worker){
+  return new Promise(resolve=>{
+    if(!worker) return resolve(null);
+    try{
+      const ch=new MessageChannel();
+      const t=setTimeout(()=>resolve(null),1500);
+      ch.port1.onmessage=ev=>{ clearTimeout(t); resolve(String(ev.data||'').replace(/^bnb-/,'')); };
+      worker.postMessage('VERSION',[ch.port2]);
+    }catch(e){ resolve(null); }
+  });
+}
 let cacheVersion = '';
+let pendingVersion = '';
 async function readCacheVersion(){
   try{
-    if(!('caches' in window)) return;
-    const verNum = k => parseInt(String(k).replace(/^bnb-v/,''),10) || 0;
-    const mine = (await caches.keys()).filter(k=>k.startsWith('bnb-')).sort((a,b)=>verNum(a)-verNum(b));
-    // Exactly one survives a completed activate; if a swap is mid-flight,
-    // report the newest rather than the one already being deleted.
-    const next = mine.length ? mine.at(-1).replace(/^bnb-/,'') : '';
-    if(next===cacheVersion) return;
-    cacheVersion = next;
+    const sw = navigator.serviceWorker;
+    const fromController = sw && sw.controller ? await askVersion(sw.controller) : null;
+    let next = fromController;
+    if(!next && 'caches' in window){
+      // Fallback for a worker predating the VERSION message, or none at all.
+      const verNum = k => parseInt(String(k).replace(/^bnb-v/,''),10) || 0;
+      const mine=(await caches.keys()).filter(k=>k.startsWith('bnb-')).sort((a,b)=>verNum(a)-verNum(b));
+      next = mine.length ? mine.at(-1).replace(/^bnb-/,'') : '';
+    }
+    if((next||'')===cacheVersion) return;
+    cacheVersion = next||'';
     updateFoot();
-  }catch(e){ /* Cache Storage blocked (private mode, plain http) — just omit it */ }
+    if(route()==='setup') render();
+  }catch(e){ /* Cache Storage / messaging blocked — just omit the version */ }
 }
 function updateFoot(){
   const el=document.getElementById('foot');
@@ -1313,33 +1365,56 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
 
   navigator.serviceWorker.register('sw.js').then(reg=>{
     swRegistration = reg;
-    const showBar=worker=>{
-      const bar=document.getElementById('updatebar');
-      bar.hidden=false;
+    const DISMISS_KEY='bnb.updateDismissed.v1';
+    const bar=()=>document.getElementById('updatebar');
+
+    /* Only announce an update that is genuinely a different version.
+       Previously any waiting worker raised the banner, so a worker that
+       kept reinstalling — or one whose activation the browser never
+       completed — produced a banner that came back after every reload with
+       no way to get rid of it. Asking both workers their version settles
+       whether there is actually anything to update to. */
+    const maybeShowBar=async worker=>{
+      if(!worker || !navigator.serviceWorker.controller) return;
+      const [mine, theirs] = await Promise.all([
+        askVersion(navigator.serviceWorker.controller), askVersion(worker)
+      ]);
+      // Both known and identical: nothing to announce, whatever the
+      // worker's state says.
+      if(mine && theirs && mine===theirs) return;
+      pendingVersion = theirs || '';
+      // Respect a dismissal of this same pending version.
+      try{ if(theirs && localStorage.getItem(DISMISS_KEY)===theirs) return; }catch(e){}
+
+      const el=bar();
+      const msg=document.getElementById('updateMsg');
+      if(msg) msg.textContent = theirs ? `Version ${theirs.toUpperCase()} is ready.` : 'New version available.';
+      el.hidden=false;
       document.getElementById('updateBtn').onclick=()=>{
-        bar.hidden=true;
+        el.hidden=true;
         /* Ask the waiting worker to take over — then reload regardless.
            The handshake alone is not enough to rely on: a worker that was
            waiting when this banner appeared can activate by itself once the
            last other tab closes, and SKIP_WAITING sent to a worker that is
            already active does nothing at all. No controllerchange fires, so
-           the page never reloads and the button looks broken. Reloading
-           anyway makes it do what it says in every case; the guard above
-           keeps that from doubling up with the controllerchange path. */
+           the page never reloads and the button looks broken. */
         try{ worker.postMessage('SKIP_WAITING'); }catch(e){}
         setTimeout(reloadOnce, 500);
       };
+      document.getElementById('updateDismiss').onclick=()=>{
+        el.hidden=true;
+        // Sticky per version, so dismissing means dismissed — rather than
+        // reappearing on the next render or reload.
+        try{ if(theirs) localStorage.setItem(DISMISS_KEY, theirs); }catch(e){}
+      };
     };
-    // A worker already sitting in "waiting" from before this page load
-    // (e.g. the update installed while the tab was in the background).
-    // No controller means this is a first install rather than an update,
-    // so there is nothing worth announcing.
-    if(reg.waiting && navigator.serviceWorker.controller) showBar(reg.waiting);
+
+    if(reg.waiting) maybeShowBar(reg.waiting);
     reg.addEventListener('updatefound',()=>{
       const nw=reg.installing;
       if(!nw) return;
       nw.addEventListener('statechange',()=>{
-        if(nw.state==='installed' && navigator.serviceWorker.controller) showBar(nw);
+        if(nw.state==='installed') maybeShowBar(nw);
       });
     });
   }).catch(()=>{});

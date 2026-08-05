@@ -1,6 +1,6 @@
 /* Cache-first shell so the app works offline in the gym.
    Bump CACHE when you change any file. */
-const CACHE = 'bnb-v10';
+const CACHE = 'bnb-v11';
 const ASSETS = ['./','./index.html','./app.css','./app.js','./sync.js','./whoop.js',
   './manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png'];
 
@@ -18,6 +18,11 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('message', e => {
   if (e.data === 'SKIP_WAITING') self.skipWaiting();
+  // Lets the page ask a worker which version it is. Without this the page
+  // can only read Cache Storage, which during a pending update contains
+  // both the running version and the incoming one and cannot tell them
+  // apart — so it could not know whether an "update" was real.
+  if (e.data === 'VERSION' && e.ports && e.ports[0]) e.ports[0].postMessage(CACHE);
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
