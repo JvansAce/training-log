@@ -92,6 +92,12 @@ body{
 .logrow input.saved{border-color:var(--green)}
 .up{color:var(--green)}
 
+/* pyramid vest */
+.vestrow{border-top:1px solid var(--line);padding-top:12px}
+.vestrow .vestkg{font-family:var(--mono);font-size:15px;font-weight:700;min-width:62px;text-align:center}
+.vestrow button{flex:none}
+.vestrow #vestSwap{margin-left:auto}
+
 /* back-fill + notes */
 .backfill{margin:0 0 14px}
 .backfill input[type=date]{flex:none;width:auto}

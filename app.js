@@ -97,7 +97,8 @@ const ADDINS = [
 const iso = d => d.toLocaleDateString('en-CA');
 let todayISO = iso(new Date());
 let todayDow = new Date().getDay();
-const DEFAULTS = {startDate:todayISO, weights:[], logs:{}, lifts:{}, whoop:{}, pyramidCap:6, calAdjust:0, updatedAt:0};
+const DEFAULTS = {startDate:todayISO, weights:[], logs:{}, lifts:{}, whoop:{},
+  pyramidCap:6, vestKg:null, vestPhase:0, calAdjust:0, updatedAt:0};
 let S = structuredClone(DEFAULTS);
 let viewing = todayDow;
 let editingDate = null;   // set to an ISO date to back-fill a past day instead of today
@@ -175,8 +176,9 @@ function adoptMerged(merged){
   render();
 }
 function stripLocal(o){
-  const {startDate,weights,logs,lifts,whoop,pyramidCap,calAdjust,updatedAt}=o;
-  return {updatedAt:updatedAt||0,startDate,pyramidCap,calAdjust,weights,logs,lifts,whoop:whoop||{}};
+  const {startDate,weights,logs,lifts,whoop,pyramidCap,vestKg,vestPhase,calAdjust,updatedAt}=o;
+  return {updatedAt:updatedAt||0,startDate,pyramidCap,
+    vestKg:vestKg??null,vestPhase:vestPhase||0,calAdjust,weights,logs,lifts,whoop:whoop||{}};
 }
 document.addEventListener('focusout',()=>{
   if(!deferredMerge) return;
@@ -325,11 +327,47 @@ function stallInfo(history){
   return {weeks:Math.max(weeks,1), sessions:recent.length};
 }
 
+/* The pyramid, precisely. Round N is N pull-ups, 2N dips, 3N push-ups,
+   4N sit-ups, 5N squats — the 1:2:3:4:5 ratio roughly matching how hard
+   each movement is. Climbing "to cap C" means doing rounds 1 through C, so
+   each movement's total is its ratio times the Cth triangular number. That
+   makes total work grow with the SQUARE of the cap: 6 to 10 is not four
+   more rounds, it is 2.6x the reps. Hence alternating load instead. */
+const PYRAMID_RATIO = [
+  {n:'pull-ups',k:1},{n:'dips',k:2},{n:'push-ups',k:3},{n:'sit-ups',k:4},{n:'squats',k:5}
+];
+function pyramidTotals(cap){
+  const tri = cap*(cap+1)/2;
+  const parts = PYRAMID_RATIO.map(r=>({n:r.n, reps:r.k*tri}));
+  return {parts, total: parts.reduce((n,p)=>n+p.reps,0)};
+}
+
+/* Suggested vest load. Scales with bodyweight so it tracks the bulk without
+   being touched, and mildly with the cap, since a higher cap is evidence of
+   capacity. Deliberately conservative — the usual guide for loaded
+   calisthenic volume is 5-10% of bodyweight, and the rep count is already
+   climbing quadratically underneath it. */
+const VEST_PCT_MIN = 0.05, VEST_PCT_MAX = 0.08;
+function suggestedVestKg(){
+  const bw = latestAvg();
+  if(bw==null) return null;
+  const cap = Math.min(10, Math.max(3, S.pyramidCap));
+  const pct = VEST_PCT_MIN + ((cap-3)/7)*(VEST_PCT_MAX-VEST_PCT_MIN);
+  return Math.round(bw*pct*2)/2;          // nearest 0.5 kg
+}
+const vestKg = () => S.vestKg!=null ? S.vestKg : suggestedVestKg();
+/* One week add a round, the next keep the rounds and add the vest.
+   vestPhase only flips which parity carries the vest, for when the real
+   schedule drifts out of step with the counter. */
+const isVestWeek = () => ((weeksIn() + (S.vestPhase||0)) % 2) === 1;
+
 function itemsFor(dow){
   return SCHEDULE[dow].items.map(it=>{
     if(it.n!=='PYRAMID') return it;
-    return {...it, n:`Holland pyramid — to round ${S.pyramidCap}`,
-      p:'1 pull-up · 2 dips · 3 push-ups · 4 sit-ups · 5 squats, climbing each round'};
+    const on=isVestWeek(), v=vestKg();
+    return {...it,
+      n:`Holland pyramid — rounds 1–${S.pyramidCap}${on&&v!=null?` · vest ${v.toFixed(1)} kg`:''}`,
+      p:'round N = N pull-ups · 2N dips · 3N push-ups · 4N sit-ups · 5N squats'};
   });
 }
 function refText(id,activeDate){
@@ -639,6 +677,31 @@ const VIEWS = {};
 
 const fmtMMSS = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 
+function pyramidPanel(){
+  const cap=S.pyramidCap, t=pyramidTotals(cap);
+  const on=isVestWeek(), v=vestKg();
+  const kg = v==null ? '–' : v.toFixed(1);
+  return `
+  <div class="wrow"><button data-cap="-1">– round</button>
+    <button data-cap="1">+ round</button>
+    <span class="ptag">cap ${cap} · build to 10</span></div>
+  <div class="pnote">Rounds 1–${cap} adds up to ${t.parts.map(p=>`<b>${p.reps}</b> ${p.n}`).join(' · ')}
+    — <b>${t.total}</b> reps.</div>
+  <div class="wrow vestrow">
+    <span class="ptag">${on?'Vest week':'Bodyweight week'}</span>
+    ${on?`<button data-vest="-0.5">–</button><b class="vestkg">${kg} kg</b><button data-vest="0.5">+</button>
+      ${S.vestKg!=null?`<button data-vest="auto">auto</button>`:''}`
+      :`<span class="ptag">next week: ${kg} kg</span>`}
+    <button id="vestSwap">swap</button>
+  </div>
+  <div class="pnote">${on
+    ? `Same ${cap} rounds as last week, wearing the vest — that is the progression this week. Add the round next week instead.`
+    : `Add a round if last week's ${cap} moved well. Next week is the same cap with the vest on.`}
+    ${S.vestKg!=null?' Weight set by hand — <b>auto</b> returns it to tracking your bodyweight.'
+      :' Suggested weight tracks your bodyweight and cap; adjust it and it sticks.'}
+    Use <b>swap</b> if the vest lands on the wrong week.</div>`;
+}
+
 VIEWS.today = () => {
   const dow=new Date().getDay(), sched=SCHEDULE[viewing];
   const isToday=viewing===dow;
@@ -687,9 +750,7 @@ VIEWS.today = () => {
           ${it.p?`<div class="ex-pre">${it.p}</div>`:''}
           ${it.id?logRow(it.id,canEdit,activeDate):''}</div>
       </div>`).join('')}
-    ${viewing===6?`<div class="wrow"><button data-cap="-1">– round</button>
-      <button data-cap="1">+ round</button>
-      <span class="ptag">cap ${S.pyramidCap} · build to 10</span></div>`:''}
+    ${viewing===6?pyramidPanel():''}
     ${sched.restSec&&canEdit?`<div class="wrow"><button id="restStart" data-sec="${sched.restSec}">Start rest timer · ${fmtMMSS(sched.restSec)}</button></div>`:''}
     ${canEdit?`<div class="wrow" style="margin-top:14px">
       <textarea id="dayNote" rows="2" placeholder="Notes for this session (optional)">${escapeHtml(log.note||'')}</textarea>
@@ -985,6 +1046,18 @@ function wireToday(){
   document.querySelectorAll('[data-cap]').forEach(b=>b.onclick=()=>{
     S.pyramidCap=Math.max(3,Math.min(10,S.pyramidCap+ +b.dataset.cap)); save(); render();
   });
+  document.querySelectorAll('[data-vest]').forEach(b=>b.onclick=()=>{
+    if(b.dataset.vest==='auto'){ S.vestKg=null; }
+    else {
+      // Nudging from the suggestion pins it: once touched, it stops moving
+      // on its own until "auto" hands it back.
+      const base=vestKg()||0;
+      S.vestKg=Math.max(0, Math.round((base + parseFloat(b.dataset.vest))*2)/2);
+    }
+    save(); render();
+  });
+  const vsw=document.getElementById('vestSwap');
+  if(vsw) vsw.onclick=()=>{ S.vestPhase=((S.vestPhase||0)+1)%2; save(); render(); };
   document.querySelectorAll('[data-cal]').forEach(b=>b.onclick=()=>{
     S.calAdjust=(S.calAdjust||0)+ +b.dataset.cal; save(); render();
   });
