@@ -23,7 +23,10 @@
     <div class="eyebrow" id="datestamp">&nbsp;</div>
     <h1>Brand<br>New <em>Body</em></h1>
   </header>
-  <main id="view" aria-live="polite"></main>
+  <!-- No aria-live here: render() replaces this whole subtree on every
+       checkbox tick, which made screen readers re-announce the entire page
+       each tap. Transient announcements go through #toast (role=status). -->
+  <main id="view"></main>
   <div class="foot" id="foot"></div>
 </div>
 

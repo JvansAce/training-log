@@ -83,7 +83,7 @@ const ADDINS = [
 const iso = d => d.toLocaleDateString('en-CA');
 let todayISO = iso(new Date());
 let todayDow = new Date().getDay();
-const DEFAULTS = {startDate:todayISO, weights:[], logs:{}, lifts:{}, pyramidCap:6, calAdjust:0, updatedAt:0};
+const DEFAULTS = {startDate:todayISO, weights:[], logs:{}, lifts:{}, whoop:{}, pyramidCap:6, calAdjust:0, updatedAt:0};
 let S = structuredClone(DEFAULTS);
 let viewing = todayDow;
 let editingDate = null;   // set to an ISO date to back-fill a past day instead of today
@@ -115,12 +115,23 @@ function load(){
       if(!Array.isArray(S.weights)) S.weights = [];
       if(!S.logs || typeof S.logs !== 'object') S.logs = {};
       if(!S.lifts || typeof S.lifts !== 'object') S.lifts = {};
+      if(!S.whoop || typeof S.whoop !== 'object') S.whoop = {};
     }
   }catch(e){
     toast('Saved data could not be read. Starting fresh.');
     S = structuredClone(DEFAULTS);
   }
   if(!S.weights.length) S.weights = [{d:todayISO, kg:79}];
+}
+/* Write to disk and queue a push, WITHOUT claiming the record changed.
+   Used for data the app derives rather than the person entering it (WHOOP
+   readings): bumping updatedAt for those would let an idle phone waking in
+   a pocket win the "newer write wins" merge for today and overwrite ticks
+   just made on another device. */
+function persistLocal(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }
+  catch(e){ /* quota — the in-memory copy still works for this session */ }
+  Sync.schedule(()=>S, adoptMerged);
 }
 function save(){
   S.updatedAt = Date.now();
@@ -132,8 +143,17 @@ function save(){
 /* The server returns the merged record. Adopt it, but never yank the page
    out from under someone mid-entry — defer the redraw until they're done. */
 let deferredMerge = null;
+/* Key order must not decide whether two records count as equal. This used
+   to be a plain JSON.stringify against a hand-listed field order that
+   happened to match mergeState's output — so adding a field to either side
+   made every merge look like a change and forced a redraw each sync. */
+function stableStringify(v){
+  if(v===null||typeof v!=='object') return JSON.stringify(v);
+  if(Array.isArray(v)) return '['+v.map(stableStringify).join(',')+']';
+  return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stableStringify(v[k])).join(',')+'}';
+}
 function adoptMerged(merged){
-  if(JSON.stringify(merged)===JSON.stringify(stripLocal(S))){ updateFoot(); return; }
+  if(stableStringify(merged)===stableStringify(stripLocal(S))){ updateFoot(); return; }
   const busy = document.activeElement && document.activeElement.tagName==='INPUT';
   if(busy){ deferredMerge = merged; updateFoot(); return; }
   S = Object.assign(structuredClone(DEFAULTS), merged);
@@ -141,8 +161,8 @@ function adoptMerged(merged){
   render();
 }
 function stripLocal(o){
-  const {startDate,weights,logs,lifts,pyramidCap,calAdjust,updatedAt}=o;
-  return {updatedAt:updatedAt||0,startDate,pyramidCap,calAdjust,weights,logs,lifts};
+  const {startDate,weights,logs,lifts,whoop,pyramidCap,calAdjust,updatedAt}=o;
+  return {updatedAt:updatedAt||0,startDate,pyramidCap,calAdjust,weights,logs,lifts,whoop:whoop||{}};
 }
 document.addEventListener('focusout',()=>{
   if(!deferredMerge) return;
@@ -191,21 +211,44 @@ const sortW = () => [...S.weights].sort((a,b)=>a.d<b.d?-1:1);
 // weight to average — null rather than NaN so callers can show a placeholder.
 function latestAvg(){ const w=sortW().slice(-7); return w.length ? avg(w.map(x=>x.kg)) : null; }
 const fmtAvg = () => { const a=latestAvg(); return a==null ? '–' : a.toFixed(1); };
+/* The rate that drives the calorie advice below. Deliberately a rolling
+   window, not the whole history: comparing the first weigh-ins ever against
+   the most recent ones measures a chord across the entire log, so months in
+   it reports a lifetime average and keeps saying "on target" during a
+   multi-week stall — exactly when it should be saying to eat more.
+   Least-squares over the window rather than first-vs-last, so one heavy
+   water-weight morning at either edge doesn't swing the whole verdict. */
+const TREND_DAYS = 28;
+const TREND_MIN_POINTS = 4;
+const TREND_MIN_SPAN = 10;
 function trend(){
   const w=sortW();
-  if(w.length<2) return null;
-  const days=(new Date(w[w.length-1].d)-new Date(w[0].d))/864e5;
-  if(days<7) return null;
-  return {rate:((avg(w.slice(-7).map(x=>x.kg))-avg(w.slice(0,7).map(x=>x.kg)))/days)*30, days};
+  if(w.length<TREND_MIN_POINTS) return null;
+  const cutoff=new Date(w.at(-1).d);
+  cutoff.setDate(cutoff.getDate()-TREND_DAYS);
+  const win=w.filter(x=>new Date(x.d)>=cutoff);
+  if(win.length<TREND_MIN_POINTS) return null;
+
+  const t0=new Date(win[0].d).getTime();
+  const xs=win.map(x=>(new Date(x.d)-t0)/864e5), ys=win.map(x=>x.kg);
+  const span=xs.at(-1);
+  if(span<TREND_MIN_SPAN) return null;
+
+  const mx=avg(xs), my=avg(ys);
+  let num=0, den=0;
+  for(let i=0;i<xs.length;i++){ num+=(xs[i]-mx)*(ys[i]-my); den+=(xs[i]-mx)**2; }
+  if(!den) return null;
+  return {rate:(num/den)*30, days:span, points:win.length};
 }
+const CAL_STEP = 200;
 function verdict(){
   const t=trend();
-  if(!t) return {cls:'',html:'Log 7+ days of weigh-ins to see your rate.'};
+  if(!t) return {cls:'',html:`Log ${TREND_MIN_POINTS}+ weigh-ins over a couple of weeks to see your rate.`};
   const r=t.rate, cls = r<0.35?'slow':r>1.0?'fast':'ok';
-  const tail = cls==='slow' ? 'Below target — add 200 kcal (more milk, bigger rice portion).'
+  const tail = cls==='slow' ? `Below target — add ${CAL_STEP} kcal (more milk, bigger rice portion).`
              : cls==='fast' ? 'Faster than a lean bulk needs. Hold calories steady.'
              : 'On target for a lean bulk.';
-  return {cls, html:`<b>${r>0?'+':''}${r.toFixed(2)} kg / month</b> over ${Math.round(t.days)} days. ${tail}`};
+  return {cls, html:`<b>${r>0?'+':''}${r.toFixed(2)} kg / month</b> over the last ${Math.round(t.days)} days. ${tail}`};
 }
 const weeksIn = () => Math.max(0,Math.floor((new Date(todayISO)-new Date(S.startDate))/6048e5));
 const fmtSet = e => `${e.kg?e.kg+' kg':'BW'} × ${e.reps}`;
@@ -226,6 +269,47 @@ function bestSet(entry){
   const sets=setsOf(entry);
   return sets.length ? sets.reduce((a,b)=>beats(b,a)?b:a) : null;
 }
+/* Work done in one session. Bodyweight sets carry no load, so kg-volume
+   would read 0 and look like nothing happened — report total reps for
+   those instead and let the caller label it. */
+function volumeOf(entry){
+  const sets=setsOf(entry);
+  const reps=sets.reduce((n,s)=>n+(s.reps||0),0);
+  const weighted=sets.filter(s=>s.kg!=null&&s.kg>0);
+  if(!weighted.length) return {reps, kg:null};
+  return {reps, kg:Math.round(weighted.reduce((n,s)=>n+s.kg*(s.reps||0),0))};
+}
+const fmtVolume = v => v.kg!=null ? `${v.kg} kg vol` : `${v.reps} reps`;
+/* Epley. Only meaningful for loaded sets, and it drifts badly at very high
+   reps, so cap where the formula still says something useful. */
+function e1rm(set){
+  if(!set || set.kg==null || !set.kg || !set.reps || set.reps>15) return null;
+  return set.kg*(1+set.reps/30);
+}
+const bestE1rm = entry => e1rm(bestSet(entry));
+
+/* "You logged it, but it hasn't moved." Only fires with enough recent
+   entries to be a real plateau rather than a two-week gap. */
+const STALL_DAYS = 28;
+const STALL_MIN_SESSIONS = 3;
+function stallInfo(history){
+  const withE=history.map(e=>({d:e.d, v:bestE1rm(e)})).filter(x=>x.v!=null);
+  if(withE.length<STALL_MIN_SESSIONS) return null;
+  const cutoff=new Date(withE.at(-1).d);
+  cutoff.setDate(cutoff.getDate()-STALL_DAYS);
+  const recent=withE.filter(x=>new Date(x.d)>=cutoff);
+  if(recent.length<STALL_MIN_SESSIONS) return null;
+  const peak=Math.max(...withE.map(x=>x.v));
+  // First time the peak was reached, not the last. Someone grinding the
+  // same 100x5 every week has the peak value on every entry including
+  // today's — taking the latest would read that as a fresh PR and never
+  // flag anything. Matching an old best is not progress.
+  const peakAt=withE.find(x=>x.v===peak);
+  // Peak first set inside the window means it's genuinely still moving.
+  if(new Date(peakAt.d)>=cutoff) return null;
+  const weeks=Math.round((new Date(withE.at(-1).d)-new Date(peakAt.d))/6048e5);
+  return {weeks:Math.max(weeks,1), sessions:recent.length};
+}
 
 function itemsFor(dow){
   return SCHEDULE[dow].items.map(it=>{
@@ -239,8 +323,14 @@ function refText(id,activeDate){
   const mine=h.find(x=>x.d===activeDate);
   const last=[...h].filter(x=>x.d!==activeDate).sort((a,b)=>a.d<b.d?-1:1).pop();
   const fmtAll=e=>setsOf(e).map(fmtSet).join(' · ');
-  if(!last) return mine?`logged ${fmtAll(mine)}`:'first entry — this becomes your benchmark';
-  let s=`last ${fmtAll(last)} · ${last.d.slice(5)}`;
+  // Once there's more than one set logged, the individual sets are already
+  // visible in the inputs right above — the useful summary is the totals.
+  const totals=e=>{
+    const v=volumeOf(e), est=bestE1rm(e);
+    return setsOf(e).length>1 ? ` · ${fmtVolume(v)}${est?` · e1RM ${est.toFixed(0)}`:''}` : '';
+  };
+  if(!last) return mine?`logged ${fmtAll(mine)}${totals(mine)}`:'first entry — this becomes your benchmark';
+  let s=`last ${fmtAll(last)}${totals(last)} · ${last.d.slice(5)}`;
   const mb=bestSet(mine), lb=bestSet(last);
   if(mb&&lb&&beats(mb,lb)) s+=' ▲ beaten';
   return s;
@@ -281,6 +371,21 @@ function spark(){
     <path d="${line}" fill="none" stroke="#E23B3B" stroke-width="1.2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
     <circle cx="${pts.at(-1)[0]}" cy="${pts.at(-1)[1]}" r="1.6" fill="#EDE7DB"/></svg>`;
 }
+/* Tiny inline trend line for a single lift's e1RM series. Flat-line safe
+   (a lifter who hasn't changed load has hi===lo, which would divide by
+   zero and blank the chart). */
+function miniSpark(values){
+  if(values.length<2) return '';
+  const lo=Math.min(...values), hi=Math.max(...values), span=(hi-lo)||1;
+  const W=64,H=18;
+  const pts=values.map((v,i)=>[(i/(values.length-1))*W, H-((v-lo)/span)*H]);
+  const line=pts.map((p,i)=>`${i?'L':'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
+  const rising=values.at(-1)>=values[0];
+  return `<svg class="minispark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${line}" fill="none" stroke="${rising?'#4FB477':'#868FA6'}" stroke-width="1.3"
+      vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${pts.at(-1)[0].toFixed(1)}" cy="${pts.at(-1)[1].toFixed(1)}" r="1.6" fill="#EDE7DB"/></svg>`;
+}
 function weightChart(){
   const w=sortW();
   if(w.length<3) return `<div class="empty">Log a few mornings and the curve shows up here.</div>`;
@@ -300,20 +405,96 @@ function weightChart(){
     <text class="axis" x="100" y="112" text-anchor="end">${w.at(-1).d}</text>
     <text class="axis" x="0" y="112">${w[0].d}</text></svg>`;
 }
+/* Shared by the consistency chart and the weekly review so the two can
+   never disagree about what counts. Thu (cardio) and Sun (rest) only have
+   2 items, so a flat >=3 would make them impossible to ever complete. */
+const sessionNeed = dow => Math.min(3, SCHEDULE[dow].items.length);
+function didSession(date){
+  const l=S.logs[iso(date)];
+  return !!(l && l.done && l.done.length >= sessionNeed(date.getDay()));
+}
+function sessionsBetween(start, end){
+  let n=0;
+  for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)) if(didSession(d)) n++;
+  return n;
+}
+/* Monday-start, matching ORDER and how the plan itself is written. */
+function weekStart(date){
+  const d=new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate()-((d.getDay()+6)%7));
+  return d;
+}
+const GREEN_WEEK = 4;   // the "four green weeks in a row" the Progress copy calls the real win
+/* Earliest day this log knows about. Weigh-ins alone are the wrong marker:
+   a device restored from a partial backup, or someone who logged sessions
+   for weeks before their first weigh-in, would otherwise have the streak
+   cut off at whatever date that first weigh-in happens to carry. */
+function logStart(){
+  const dates=Object.keys(S.logs||{});
+  if(S.weights.length) dates.push(sortW()[0].d);
+  if(S.startDate) dates.push(S.startDate);
+  return dates.length ? dates.sort()[0] : null;
+}
+function greenStreak(){
+  const from=logStart();
+  if(!from) return 0;
+  let streak=0;
+  // Start from last week: the current one is still in progress and would
+  // read as a broken streak every Monday morning.
+  for(let k=1;k<=52;k++){
+    const start=weekStart(new Date()); start.setDate(start.getDate()-7*k);
+    const end=new Date(start); end.setDate(end.getDate()+6);
+    // Weeks from before this log existed aren't failures, just absent.
+    if(end < new Date(from)) break;
+    if(sessionsBetween(start,end) >= GREEN_WEEK) streak++; else break;
+  }
+  return streak;
+}
+
+function weeklyReview(){
+  const thisStart=weekStart(new Date());
+  const thisEnd=new Date(thisStart); thisEnd.setDate(thisEnd.getDate()+6);
+  const prevStart=new Date(thisStart); prevStart.setDate(prevStart.getDate()-7);
+  const prevEnd=new Date(thisStart); prevEnd.setDate(prevEnd.getDate()-1);
+
+  const done=sessionsBetween(thisStart, new Date());
+  // Target excludes the full-rest day — six trainable days a week.
+  const target=ORDER.filter(d=>d!==0).length;
+
+  const inRange=(a,b)=>sortW().filter(x=>{ const d=new Date(x.d); return d>=a&&d<=b; }).map(x=>x.kg);
+  const thisW=inRange(thisStart,thisEnd), prevW=inRange(prevStart,prevEnd);
+  const delta=(thisW.length&&prevW.length) ? avg(thisW)-avg(prevW) : null;
+
+  // Seeding reduce() with null would hand beats() a null on the first
+  // iteration; reducing an empty array without a seed throws instead. Both
+  // cases are reachable from real data, so handle emptiness explicitly.
+  const bestAcross=entries=>{
+    const s=entries.map(bestSet).filter(Boolean);
+    return s.length ? s.reduce((a,b)=>beats(b,a)?b:a) : null;
+  };
+  const improved=[];
+  Object.keys(S.lifts||{}).forEach(id=>{
+    const h=[...(S.lifts[id]||[])].sort((a,b)=>a.d<b.d?-1:1);
+    const cur=h.filter(e=>{ const d=new Date(e.d); return d>=thisStart&&d<=thisEnd; });
+    if(!cur.length) return;
+    const before=h.filter(e=>new Date(e.d)<thisStart);
+    if(!before.length) return;
+    const bestBefore=bestAcross(before), bestNow=bestAcross(cur);
+    if(bestBefore&&bestNow&&beats(bestNow,bestBefore)) improved.push(id);
+  });
+
+  const streak=greenStreak();
+  return {done, target, delta, improved, streak,
+    label:`${thisStart.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${thisEnd.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`};
+}
+
 function adherence(){
   const bars=[];
   for(let k=7;k>=0;k--){
     const end=new Date(); end.setDate(end.getDate()-k*7);
     const start=new Date(end); start.setDate(start.getDate()-6);
-    let sessions=0;
-    for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
-      const l=S.logs[iso(d)];
-      // Thu (cardio) and Sun (rest) only have 2 items — a flat >=3 makes
-      // them mathematically impossible to count as a session ever.
-      const need=Math.min(3, SCHEDULE[d.getDay()].items.length);
-      if(l&&l.done&&l.done.length>=need) sessions++;
-    }
-    bars.push(sessions);
+    bars.push(sessionsBetween(start,end));
   }
   if(!bars.some(b=>b>0)) return `<div class="empty">Complete a session and your weekly consistency lands here.</div>`;
   const W=100,H=46,bw=W/bars.length;
@@ -329,7 +510,7 @@ function adherence(){
 }
 
 /* ---------------- WHOOP display ---------------- */
-function whoopBadge(){
+function whoopBadge(offerTick){
   const w = Whoop.peek();
   if (!w || !w.connected) return '';   // not connected, or nothing fetched yet — stay quiet
 
@@ -347,6 +528,19 @@ function whoopBadge(){
   const hrv = rec && rec.hrv_ms != null ? Math.round(rec.hrv_ms) : '–';
   const rhr = rec && rec.rhr != null ? rec.rhr : '–';
 
+  // Ignore very short activities — WHOOP records plenty of incidental ones
+  // and "you trained today" should mean an actual session.
+  const workouts = (w.workouts || []).filter(x => x.minutes == null || x.minutes >= 10);
+  const tItems = itemsFor(todayDow);
+  const complete = dayLog(todayISO).done.length >= tItems.length;
+  const detected = workouts.length ? `
+    <div class="wkdetect">
+      <div>WHOOP recorded ${workouts.map(x =>
+        `${escapeHtml(x.sport || 'a workout')}${x.minutes ? ` · ${x.minutes} min` : ''}${x.strain != null ? ` · ${x.strain.toFixed(1)} strain` : ''}`
+      ).join(', ')} today.</div>
+      ${offerTick && !complete ? `<button id="tickSession">Tick this session</button>` : ''}
+    </div>` : '';
+
   return `<section class="panel">
     <div class="phead"><div class="ptitle">Recovery</div>
       <div class="ptag whoop-badge ${cls}">${recLabel}</div></div>
@@ -356,6 +550,7 @@ function whoopBadge(){
       <div><b>${hrv}</b><span>hrv ms</span></div>
       <div><b>${rhr}</b><span>rhr</span></div>
     </div>
+    ${detected}
     ${cls==='low' ? `<div class="pnote">Recovery is red today. If today's session has any give in it — Thursday's cardio, the pyramid — this is the day to take it.</div>` : ''}
   </section>`;
 }
@@ -463,7 +658,9 @@ VIEWS.today = () => {
     </div>`;
 
   const v=verdict();
-  return spine + backfill + whoopBadge() + `
+  // Only offer to tick from a detected workout when the ticks would land on
+  // today — not while previewing another weekday or back-filling a past one.
+  return spine + backfill + whoopBadge(canEdit && !editingDate) + `
   <section class="panel">
     <div class="phead"><div class="ptitle">${sched.title}</div>
       <div class="ptag">${canEdit&&!editingDate?'Today':editingDate?editingDate.slice(5):sched.label+' · preview'} · ${sched.tag}</div></div>
@@ -505,6 +702,10 @@ VIEWS.today = () => {
     </details>
     <div class="wrow"><button data-cal="-100">– 100 kcal</button><button data-cal="100">+ 100 kcal</button>
       <span class="ptag">adjust ${S.calAdjust>0?'+':''}${S.calAdjust}</span></div>
+    ${v.cls==='slow'?`<div class="wrow suggest">
+      <span class="ptag">Trend is below target</span>
+      <button class="primary" id="applyCal">Apply + ${CAL_STEP} kcal</button>
+    </div>`:''}
   </section>
 
   <section class="panel">
@@ -575,8 +776,25 @@ VIEWS.progress = () => {
   const named={};
   ORDER.forEach(d=>itemsFor(d).forEach(it=>{ if(it.id) named[it.id]=it.n; }));
   const logged=allIds.filter(id=>(S.lifts[id]||[]).length);
+  const r=weeklyReview();
 
   return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">This week</div><div class="ptag">${r.label}</div></div>
+    <div class="macros">
+      <div class="macro"><b>${r.done}<span class="of">/${r.target}</span></b><span>sessions</span></div>
+      <div class="macro"><b>${r.delta==null?'–':(r.delta>0?'+':'')+r.delta.toFixed(1)}</b><span>kg vs last wk</span></div>
+      <div class="macro"><b>${r.improved.length}</b><span>lifts up</span></div>
+      <div class="macro"><b>${r.streak}</b><span>green weeks</span></div>
+    </div>
+    ${r.improved.length?`<div class="pnote">Beaten this week: <b>${r.improved.map(id=>named[id]||id).join(', ')}</b>.</div>`:''}
+    <div class="pnote">${r.streak>=GREEN_WEEK
+      ? `<b>${r.streak} weeks running</b> at ${GREEN_WEEK}+ sessions. This is the part that actually builds the body — keep it boring.`
+      : r.streak>0
+      ? `${r.streak} week${r.streak===1?'':'s'} running at ${GREEN_WEEK}+ sessions. ${GREEN_WEEK-r.streak} more for a full green month.`
+      : `A week counts as green at ${GREEN_WEEK}+ sessions. The streak starts with one.`}</div>
+  </section>
+
   <section class="panel">
     <div class="phead"><div class="ptitle">Body weight</div><div class="ptag">${w.length} weigh-ins</div></div>
     <div class="bigstat"><div class="n">${fmtAvg()}<sub> kg</sub></div>
@@ -604,10 +822,18 @@ VIEWS.progress = () => {
       const lastDay=days.at(-1);
       const isBest=lastDay===best||!beats(best.best,lastDay.best);
       const fmtAll=e=>setsOf(e).map(fmtSet).join(' · ');
-      return `<div class="hist"><div class="hist-n">${named[id]||id}</div>
+      const vol=volumeOf(lastDay.entry), est=bestE1rm(lastDay.entry);
+      const series=days.map(x=>bestE1rm(x.entry)).filter(x=>x!=null);
+      const stall=stallInfo(h);
+      return `<div class="hist"><div class="hist-n">${named[id]||id}
+          ${series.length>1?miniSpark(series):''}
+          ${stall?`<div class="stall">no PR in ${stall.weeks} week${stall.weeks===1?'':'s'} · ${stall.sessions} sessions — change a variable</div>`:''}
+        </div>
         <div class="hist-v"><b>${fmtAll(lastDay.entry)}</b> ${isBest?'<span class="up">▲ best</span>':''}<br>
+        ${fmtVolume(vol)}${est?` · e1RM ${est.toFixed(0)}`:''}<br>
         best ${fmtSet(best.best)} · ${h.length} entr${h.length===1?'y':'ies'}</div></div>`}).join('')
       :`<div class="empty">Log a set on the Today page and your progression appears here.</div>`}
+    <div class="pnote">e1RM is an Epley estimate from your best set — useful for comparing a heavy triple against a lighter set of ten, not a number to go and test.</div>
   </section>`;
 };
 
@@ -651,6 +877,9 @@ VIEWS.setup = () => {
     <div class="wrow"><button class="primary" id="exp">Export file</button>
       <button id="impBtn">Import file</button>
       <input type="file" id="imp" accept="application/json" hidden></div>
+    <div class="pnote">JSON is the one to keep for restoring. CSV is for poking at the numbers in a spreadsheet — it can't be imported back.</div>
+    <div class="wrow"><button id="csvW">Weigh-ins CSV</button>
+      <button id="csvL">Lifts CSV</button></div>
   </section>
 
   <section class="panel">
@@ -741,6 +970,11 @@ function wireToday(){
   document.querySelectorAll('[data-cal]').forEach(b=>b.onclick=()=>{
     S.calAdjust=(S.calAdjust||0)+ +b.dataset.cal; save(); render();
   });
+  const ac=document.getElementById('applyCal');
+  if(ac) ac.onclick=()=>{
+    S.calAdjust=(S.calAdjust||0)+CAL_STEP; save(); render();
+    toast(`Target raised by ${CAL_STEP} kcal. Give it two weeks.`);
+  };
   const bt=document.getElementById('backtoday');
   if(bt) bt.onclick=()=>{viewing=todayDow; render()};
   const bfd=document.getElementById('backfillDone');
@@ -757,6 +991,14 @@ function wireToday(){
   };
   const rs=document.getElementById('restStart');
   if(rs) rs.onclick=()=>startRestTimer(+rs.dataset.sec);
+  const ts=document.getElementById('tickSession');
+  if(ts) ts.onclick=()=>{
+    // Explicit tap rather than auto-ticking on detection: WHOOP knows you
+    // trained, it doesn't know which items on the checklist you actually did.
+    const l=dayLog(todayISO);
+    l.done=itemsFor(todayDow).map((_,i)=>i);
+    save(); render(); toast('Session marked complete.');
+  };
 
   const wS=document.getElementById('wSave'), wI=document.getElementById('wIn');
   wS.onclick=()=>{
@@ -809,13 +1051,43 @@ function wireSetup(){
     } else toast('Nothing to pull.');
   };
 
-  document.getElementById('exp').onclick=()=>{
-    const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+  const download=(text,filename,type)=>{
+    const blob=new Blob([text],{type});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
-    a.download=`bnb-backup-${todayISO}.json`;
+    a.download=filename;
     a.click(); URL.revokeObjectURL(a.href);
+  };
+  document.getElementById('exp').onclick=()=>{
+    download(JSON.stringify(S,null,2), `bnb-backup-${todayISO}.json`, 'application/json');
     toast('Backup file downloaded.');
+  };
+  // Quote anything a spreadsheet would otherwise split or mangle. Notes are
+  // free text, so this is not theoretical.
+  const csvCell=v=>{
+    const s=v==null?'':String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const toCsv=rows=>rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
+  document.getElementById('csvW').onclick=()=>{
+    const rows=[['date','kg'], ...sortW().map(x=>[x.d,x.kg])];
+    download(toCsv(rows), `bnb-weighins-${todayISO}.csv`, 'text/csv');
+    toast('Weigh-ins CSV downloaded.');
+  };
+  document.getElementById('csvL').onclick=()=>{
+    const named={};
+    ORDER.forEach(d=>itemsFor(d).forEach(it=>{ if(it.id) named[it.id]=it.n; }));
+    const rows=[['date','lift_id','lift','set','kg','reps','e1rm']];
+    Object.keys(S.lifts||{}).sort().forEach(id=>{
+      [...(S.lifts[id]||[])].sort((a,b)=>a.d<b.d?-1:1).forEach(entry=>{
+        setsOf(entry).forEach((s,i)=>{
+          const est=e1rm(s);
+          rows.push([entry.d, id, named[id]||id, i+1, s.kg==null?'':s.kg, s.reps, est?est.toFixed(1):'']);
+        });
+      });
+    });
+    download(toCsv(rows), `bnb-lifts-${todayISO}.csv`, 'text/csv');
+    toast('Lifts CSV downloaded.');
   };
   const imp=document.getElementById('imp');
   document.getElementById('impBtn').onclick=()=>imp.click();
@@ -911,7 +1183,29 @@ Sync.onChange(()=>{
 fetchIdentity().then(id=>{ if(id){ identity=id; render(); } });
 Sync.run(S).then(merged=>{ if(merged) adoptMerged(merged); else updateFoot(); });
 
-function whoopRerenderIfShown(){
+/* WHOOP responses are transient — the client caches for ten minutes and
+   forgets on reload, so nothing has ever been kept. Writing the daily
+   numbers into state is what makes "did recovery actually track my
+   training?" answerable later; that history only exists from the day it
+   starts being recorded, which is the argument for doing it now. */
+function recordWhoop(w){
+  if(!w || !w.connected || !S.whoop) return;
+  const scored = v => v && v.state === 'SCORED';
+  const rec=w.recovery, str=w.strain, slp=w.sleep;
+  if(!scored(rec) && !scored(str) && !scored(slp)) return;
+  const entry={
+    recovery: scored(rec) ? rec.score ?? null : null,
+    strain:   scored(str) && str.value!=null ? Math.round(str.value*10)/10 : null,
+    sleep:    scored(slp) ? slp.performance_pct ?? null : null,
+    hrv:      scored(rec) && rec.hrv_ms!=null ? Math.round(rec.hrv_ms) : null,
+    rhr:      scored(rec) ? rec.rhr ?? null : null
+  };
+  if(stableStringify(S.whoop[todayISO]||null)===stableStringify(entry)) return;
+  S.whoop[todayISO]=entry;
+  persistLocal();   // not save() — see persistLocal for why this must not bump updatedAt
+}
+function whoopRerenderIfShown(w){
+  recordWhoop(w);
   if(route()==='today' || route()==='setup') render();
 }
 Whoop.today().then(whoopRerenderIfShown);
