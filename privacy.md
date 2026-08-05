@@ -1,0 +1,1 @@
+This app is a personal training log. It stores your WHOOP recovery, strain and sleep data to display it back to you. Data is not shared with any third party. Contact: jonasvanaans@icloud.com.
