@@ -13,7 +13,7 @@ const SCHEDULE = {
      note:'Your conditioning is covered. No lifting today. Carb meal 2–3h before, shake after.',
      items:[{n:'Dynamic warm-up',p:'leg swings · lunge w/ rotation · shoulder circles · 3 short sprints'},
             {n:'Tennis',p:'play'},
-            {n:'Core finisher (optional)',p:'hanging leg raises 3×12 · plank 3×45s'},
+            {n:'Core finisher',p:'ab wheel or plank 3×45s · Pallof press 3×10 / side'},
             {n:'Post-match shake',p:'30g whey + 300ml milk + banana'}]},
   2:{label:'TU',color:'#E23B3B',title:'Upper · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'The heavy day. Add weight or a rep whenever you hit the top of the range.',
@@ -22,31 +22,45 @@ const SCHEDULE = {
             {n:'Incline DB press',p:'4 × 8–10',id:'incline'},
             {n:'Barbell or DB row',p:'4 × 8–10',id:'row'},
             {n:'Overhead press',p:'3 × 8–10',id:'ohp'},
-            {n:'Dips',p:'3 × to 2 reps shy of failure',id:'dips'}]},
+            {n:'Dips',p:'3 × to 2 reps shy of failure',id:'dips'},
+            // Shares the 'lat' id with Friday on purpose: one combined
+            // progression history rather than two half-pictures.
+            {n:'Lateral raises',p:'3 × 12–15 — strict, no swing',id:'lat'}]},
   3:{label:'WE',color:'#E23B3B',title:'Lower · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'If Monday tennis left you wrecked, swap this with Tuesday.',
      items:[{n:'Leg swings · hip circles · 90/90',p:'warm-up 5 min'},
             {n:'Squat or trap bar deadlift',p:'4 × 5–8',id:'squat'},
             {n:'Romanian deadlift',p:'3 × 8–10',id:'rdl'},
+            // The RDL is pure hip extension. The short head of the biceps
+            // femoris only crosses the knee, so it barely works in any
+            // hinge — this is the movement that actually trains it.
+            {n:'Leg curl or Nordic',p:'3 × 8–12',id:'legcurl'},
             {n:'Bulgarian split squat',p:'3 × 10 / leg',id:'bss'},
             {n:'Calf raises',p:'3 × 15',id:'calf'},
-            {n:'Hanging leg raises',p:'3 × 12',id:'hlr'}]},
+            {n:'Hanging leg raises',p:'3 × 12 — add a dumbbell between the feet when 12 is easy',id:'hlr'}]},
   4:{label:'TH',color:'#D9A13B',title:'Easy Cardio',tag:'Zone 2 only',
      note:'Conversational pace. If WHOOP recovery is red, take the full rest instead — this is the first thing to drop.',
      items:[{n:'Zone 2',p:'20–35 min easy jog, bike or brisk hike'},
             {n:'Daily mobility',p:'see below'}]},
   5:{label:'FR',color:'#E23B3B',title:'Upper · Volume',tag:'Rest 60–90s',restSec:75,
-     note:'Chase the pump here. Lateral raises are what make the suit fit.',
+     note:'Chase the pump here. Side and rear delts are what make the suit fit — and they only get trained if you actually load them.',
      items:[{n:'Band pull-aparts',p:'warm-up 2×15'},
             {n:'Pull-ups',p:'4 × max reps',id:'pullup'},
             {n:'Flat DB press',p:'4 × 10–12',id:'flat'},
             {n:'Cable or band row',p:'3 × 12',id:'crow'},
             {n:'Lateral raises',p:'4 × 15',id:'lat'},
+            // Promoted from a warm-up to real loaded sets — rear delts had
+            // no working volume anywhere in the week.
+            {n:'Face pulls',p:'3 × 15 — load it, pause at the face',id:'facepull'},
             {n:'Curls + triceps',p:'3 × 12 each',id:'arms'}]},
   6:{label:'SA',color:'#E23B3B',title:'Lower + Pyramid',tag:'Treat it as a session',
-     note:'The pyramid is a full session element, not an add-on. Every other week wear the vest instead of climbing higher.',
+     note:'The pyramid is a full session element, not an add-on. Alternate the two ways of progressing it: one week add a round, the next keep the same rounds and wear the vest.',
      items:[{n:'Front or goblet squat',p:'4 × 8',id:'fsquat'},
             {n:'Box jumps',p:'4 × 6 explosive, full rest',id:'boxjump'},
+            {n:'Calf raises',p:'3 × 12–15 — pause at the top',id:'calf'},
+            // Loaded flexion, so abs get progressive overload like anything
+            // else. The pyramid's sit-ups are endurance work, not growth.
+            {n:'Cable crunch or weighted sit-up',p:'3 × 10–15 — add load, not reps',id:'crunch'},
             {n:'PYRAMID',p:'',id:'pyramid'}]},
   0:{label:'SU',color:'#868FA6',title:'Full Rest',tag:'Growth happens here',
      note:'Nothing structured. Walk, stretch, eat. Long mobility is the only box worth ticking.',
@@ -1379,16 +1393,23 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
       const [mine, theirs] = await Promise.all([
         askVersion(navigator.serviceWorker.controller), askVersion(worker)
       ]);
-      // Both known and identical: nothing to announce, whatever the
-      // worker's state says.
-      if(mine && theirs && mine===theirs) return;
-      pendingVersion = theirs || '';
+      /* Announce ONLY on positive confirmation that the waiting worker is a
+         genuinely different version. Showing it whenever some worker was
+         waiting is what produced a banner that came back after every reload
+         — and when the version can't be established, the dismissal below
+         has nothing to key against, so dismissing it did not stick either
+         and it returned forever. Staying silent when unsure is the safer
+         default now that Setup shows the running version outright and has a
+         Force update button; a missed prompt is recoverable, an
+         undismissable banner is not. */
+      if(!(mine && theirs && mine !== theirs)) return;
+      pendingVersion = theirs;
       // Respect a dismissal of this same pending version.
-      try{ if(theirs && localStorage.getItem(DISMISS_KEY)===theirs) return; }catch(e){}
+      try{ if(localStorage.getItem(DISMISS_KEY)===theirs) return; }catch(e){}
 
       const el=bar();
       const msg=document.getElementById('updateMsg');
-      if(msg) msg.textContent = theirs ? `Version ${theirs.toUpperCase()} is ready.` : 'New version available.';
+      if(msg) msg.textContent = `Version ${theirs.toUpperCase()} is ready.`;
       el.hidden=false;
       document.getElementById('updateBtn').onclick=()=>{
         el.hidden=true;
@@ -1403,9 +1424,10 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
       };
       document.getElementById('updateDismiss').onclick=()=>{
         el.hidden=true;
-        // Sticky per version, so dismissing means dismissed — rather than
-        // reappearing on the next render or reload.
-        try{ if(theirs) localStorage.setItem(DISMISS_KEY, theirs); }catch(e){}
+        // theirs is guaranteed non-empty by the check above, so this always
+        // records something — the previous version could silently store
+        // nothing and let the banner return on the next load.
+        try{ localStorage.setItem(DISMISS_KEY, theirs); }catch(e){}
       };
     };
 
