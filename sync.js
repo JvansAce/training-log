@@ -44,9 +44,17 @@ const Sync = (() => {
     const res = await fetch(ENDPOINT, {
       method,
       cache: 'no-store',
+      // A lapsed Access session answers with a 302 to the team's login
+      // domain. Following that cross-origin redirect throws a CORS error,
+      // which the caller's catch reported as "OFFLINE" — sending you to
+      // check your signal when the actual problem was your session, on a
+      // screen with no way to sign in again. 'manual' turns the redirect
+      // into an inspectable response instead of an exception.
+      redirect: 'manual',
       headers: body ? { 'content-type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined
     });
+    if (res.type === 'opaqueredirect' || res.status === 0) { set('unauthorized'); return null; }
     if (res.status === 404) { set('absent'); return null; }
     if (res.status === 401 || res.status === 403) { set('unauthorized'); return null; }
     if (res.status === 503) {

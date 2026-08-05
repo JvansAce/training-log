@@ -1015,7 +1015,11 @@ function wireSetup(){
   const so=document.getElementById('signout');
   if(so) so.onclick=()=>{ location.href='/cdn-cgi/access/logout'; };
   const ra=document.getElementById('reauth');
-  if(ra) ra.onclick=()=>location.reload();
+  // A plain reload can be answered straight from the service worker cache,
+  // which is exactly the trap this button exists to get out of. The query
+  // string guarantees a cache miss, so the request reaches the network and
+  // Access can redirect to its login page.
+  if(ra) ra.onclick=()=>{ location.href=`${location.pathname}?reauth=${Date.now()}${location.hash}`; };
 
   const wc=document.getElementById('whoopConnect');
   if(wc) wc.onclick=()=>Whoop.connect();
@@ -1229,6 +1233,13 @@ function whoopRerenderIfShown(w){
   if(route()==='today' || route()==='setup') render();
 }
 Whoop.today().then(whoopRerenderIfShown);
+
+/* Tidy up the cache-busting param the re-auth button adds, so it doesn't
+   linger in the URL or get bookmarked. */
+(function(){
+  if(new URLSearchParams(location.search).has('reauth'))
+    history.replaceState(null,'',location.pathname+location.hash);
+})();
 
 /* WHOOP just redirected back from its consent screen. The query string
    rides alongside the hash router rather than replacing it. */
