@@ -1280,32 +1280,40 @@ setInterval(()=>{ if(syncClock()) render(); }, 60_000);
 let swRegistration = null;
 readCacheVersion();
 if('serviceWorker' in navigator && location.protocol==='https:'){
+  let reloading=false;
+  const reloadOnce=()=>{ if(reloading) return; reloading=true; location.reload(); };
+  navigator.serviceWorker.addEventListener('controllerchange', reloadOnce);
+
   navigator.serviceWorker.register('sw.js').then(reg=>{
     swRegistration = reg;
     const showBar=worker=>{
       const bar=document.getElementById('updatebar');
       bar.hidden=false;
-      document.getElementById('updateBtn').onclick=()=>worker.postMessage('SKIP_WAITING');
+      document.getElementById('updateBtn').onclick=()=>{
+        bar.hidden=true;
+        /* Ask the waiting worker to take over — then reload regardless.
+           The handshake alone is not enough to rely on: a worker that was
+           waiting when this banner appeared can activate by itself once the
+           last other tab closes, and SKIP_WAITING sent to a worker that is
+           already active does nothing at all. No controllerchange fires, so
+           the page never reloads and the button looks broken. Reloading
+           anyway makes it do what it says in every case; the guard above
+           keeps that from doubling up with the controllerchange path. */
+        try{ worker.postMessage('SKIP_WAITING'); }catch(e){}
+        setTimeout(reloadOnce, 500);
+      };
     };
     // A worker already sitting in "waiting" from before this page load
     // (e.g. the update installed while the tab was in the background).
-    if(reg.waiting) showBar(reg.waiting);
+    // No controller means this is a first install rather than an update,
+    // so there is nothing worth announcing.
+    if(reg.waiting && navigator.serviceWorker.controller) showBar(reg.waiting);
     reg.addEventListener('updatefound',()=>{
       const nw=reg.installing;
       if(!nw) return;
       nw.addEventListener('statechange',()=>{
-        // navigator.serviceWorker.controller is only set once some worker
-        // has ever controlled this page — its absence means this install
-        // is the very first one, not an update, so there's nothing to
-        // announce.
         if(nw.state==='installed' && navigator.serviceWorker.controller) showBar(nw);
       });
     });
   }).catch(()=>{});
-  let reloading=false;
-  navigator.serviceWorker.addEventListener('controllerchange',()=>{
-    if(reloading) return;
-    reloading=true;
-    location.reload();
-  });
 }
