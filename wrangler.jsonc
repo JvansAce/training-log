@@ -9,7 +9,8 @@
   "vars": {
     "ACCESS_TEAM_DOMAIN": "fancy-bird-116f.cloudflareaccess.com",
     "ACCESS_AUD": "71de02b82b80a7819ec86f825688d096aed37edc6a34aaed20664397293cf9b4"
-  },
+    "WHOOP_CLIENT_ID": "37e519ab-e22d-4c70-adc1-fc22bea9efba"
+   },
   "d1_databases": [
     {
       "binding": "DB",
