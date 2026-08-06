@@ -854,6 +854,218 @@ function pyramidHistory(){
   }).join(' · ')}</div>`;
 }
 
+/* ---------------- coach briefing ---------------- */
+/* "Claude's read on my training, without an API key, just my subscription."
+   A Pro/Max subscription authenticates claude.ai and the Claude apps — it
+   does not mint a credential this Worker could call an API with, and there
+   is no honest way to make one appear. What the subscription absolutely
+   does cover is you pasting your own data into your own conversation. So
+   the app's job is to make that one tap instead of twenty minutes of
+   retyping: everything a coach would ask for, as plain markdown, straight
+   to the clipboard or into the iOS share sheet.
+   Free, no key to leak, and you get to argue back — which is most of the
+   value of asking a coach anything. */
+
+const DAY_NAME = {0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday',6:'Saturday'};
+// Caps so the briefing stays something you can read, and paste, on a phone.
+const BRIEF = {lifts:14, sessions:8, notes:5, recovery:14, pyramids:6, weights:10};
+// nextTarget/verdict return display HTML; the briefing is plain text.
+const plain = s => String(s).replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim();
+
+/* Name, prescription and weekday for every logged lift id, read out of the
+   schedule rather than a second table — ids that appear on two days (lat,
+   calf) correctly collect both. */
+function liftCatalogue(){
+  const m={};
+  ORDER.forEach(d=>SCHEDULE[d].items.forEach(it=>{
+    if(!it.id) return;
+    const e = m[it.id] || (m[it.id]={name:it.n, days:[], schemes:[]});
+    if(!e.days.includes(SCHEDULE[d].label)) e.days.push(SCHEDULE[d].label);
+    if(it.p && !e.schemes.includes(it.p)) e.schemes.push(it.p);
+  }));
+  return m;
+}
+
+function briefBodyweight(L){
+  const w=sortW(), t=trend(), a=latestAvg();
+  L.push('## Bodyweight');
+  if(!w.length){ L.push('- No weigh-ins logged yet.', ''); return; }
+  L.push(`- 7-day average: **${a.toFixed(1)} kg** (${w.length} weigh-in${w.length===1?'':'s'} total)`);
+  L.push(t
+    ? `- ${TREND_DAYS}-day trend: **${t.rate>0?'+':''}${t.rate.toFixed(2)} kg / month** (least-squares over ${t.points} points spanning ${Math.round(t.days)} days)`
+    : `- Not enough recent weigh-ins for a trend (needs ${TREND_MIN_POINTS}+ inside ${TREND_DAYS} days).`);
+  // load() seeds a single placeholder weigh-in on a fresh install, so one
+  // entry is not a history — "since you started: 0.0 kg" off that is noise.
+  if(w.length>1) L.push(`- Since ${w[0].d}: **${w.at(-1).kg-w[0].kg>0?'+':''}${(w.at(-1).kg-w[0].kg).toFixed(1)} kg**`);
+  L.push(`- Target for this bulk: +0.5–0.75 kg / month. The app's own verdict: ${plain(verdict().html)}`);
+  L.push(`- Calorie baseline: ${2900+(S.calAdjust||0)} kcal rest days / ${3200+(S.calAdjust||0)} kcal training days` +
+         `${S.calAdjust ? ` (manual adjustment of ${S.calAdjust>0?'+':''}${S.calAdjust} kcal applied)` : ' (no manual adjustment)'}`);
+  L.push(`- Recent weigh-ins: ${w.slice(-BRIEF.weights).map(x=>`${x.d.slice(5)} ${x.kg}`).join(' · ')} kg`);
+  L.push('');
+}
+
+function briefWaist(L){
+  const q=[...(S.waist||[])].sort((a,b)=>a.d<b.d?-1:1);
+  L.push('## Waist');
+  if(q.length<2){
+    L.push(q.length ? `- One measurement only: ${q[0].d} ${q[0].cm} cm. Not enough to read against the scale.`
+                    : '- Not measured. (Worth saying so — without it, weight gain alone cannot tell you what kind.)');
+    L.push('');
+    return;
+  }
+  const first=q[0], last=q.at(-1);
+  const span=Math.round((new Date(last.d)-new Date(first.d))/864e5);
+  const ws=sortW(), at=d=>ws.filter(x=>x.d<=d).at(-1);
+  const w0=at(first.d), w1=at(last.d);
+  L.push(`- ${first.d} ${first.cm} cm → ${last.d} ${last.cm} cm (**${last.cm-first.cm>0?'+':''}${(last.cm-first.cm).toFixed(1)} cm** over ${span} days)`);
+  if(w0&&w1) L.push(`- Bodyweight across the same span: **${w1.kg-w0.kg>0?'+':''}${(w1.kg-w0.kg).toFixed(1)} kg**`);
+  L.push('');
+}
+
+function briefConsistency(L){
+  const r=weeklyReview();
+  L.push('## Consistency');
+  L.push(`- This week (${r.label}): **${r.done} of ${r.target}** sessions`);
+  L.push(`- Green-week streak (weeks at ${GREEN_WEEK}+ sessions): **${r.streak}**`);
+  const bars=[];
+  for(let k=7;k>=0;k--){
+    const end=new Date(); end.setDate(end.getDate()-k*7);
+    const start=new Date(end); start.setDate(start.getDate()-6);
+    bars.push(sessionsBetween(start,end));
+  }
+  L.push(`- Sessions per week, last 8 weeks (oldest → newest): ${bars.join(', ')}`);
+  const recent=Object.keys(S.logs||{}).filter(d=>((S.logs[d]||{}).done||[]).length)
+    .sort().slice(-BRIEF.sessions).reverse();
+  if(recent.length){
+    L.push('- Recent days:');
+    recent.forEach(d=>{
+      const dow=new Date(d+'T00:00:00').getDay();
+      const total=SCHEDULE[dow].items.length;
+      L.push(`  - ${d} ${SCHEDULE[dow].title} — ${(S.logs[d].done||[]).length}/${total} ticked` +
+             `${S.logs[d].fuel?', fuel hit':''}`);
+    });
+  }
+  L.push('');
+}
+
+function briefLifts(L){
+  const cat=liftCatalogue();
+  const ids=Object.keys(cat).filter(id=>(S.lifts[id]||[]).length).slice(0,BRIEF.lifts);
+  L.push('## Lifts');
+  if(!ids.length){ L.push('- Nothing logged yet.', ''); return; }
+  L.push('Each entry: what the last session was, the best ever, and what the app is telling me to do next.');
+  L.push('');
+  ids.forEach(id=>{
+    const meta=cat[id];
+    const h=[...(S.lifts[id]||[])].sort((a,b)=>a.d<b.d?-1:1);
+    const days=h.map(e=>({e, best:bestSet(e)})).filter(x=>x.best);
+    if(!days.length) return;
+    const best=days.reduce((a,b)=>beats(b.best,a.best)?b:a);
+    const lastDay=days.at(-1);
+    const vol=volumeOf(lastDay.e), est=bestE1rm(lastDay.e);
+    const scheme=meta.schemes.join(' / ') || 'no fixed scheme';
+    L.push(`- **${meta.name}** (${meta.days.join('+')}, prescribed ${scheme})`);
+    L.push(`  - last ${lastDay.e.d}: ${setsOf(lastDay.e).map(fmtSet).join(' · ')} — ${fmtVolume(vol)}${est?`, e1RM ${est.toFixed(0)}`:''}`);
+    L.push(`  - best ever ${fmtSet(best.best)} on ${best.e.d} · ${h.length} session${h.length===1?'':'s'} logged`);
+    // Only meaningful for the day this lift is actually scheduled on.
+    const tg = meta.schemes.length ? nextTarget(id, '', meta.schemes[0]) : null;
+    if(tg) L.push(`  - app suggests: ${plain(tg.text)}`);
+    const stall=stallInfo(h);
+    if(stall) L.push(`  - STALLED: no PR in ${stall.weeks} week${stall.weeks===1?'':'s'} across ${stall.sessions} sessions`);
+  });
+  L.push('');
+}
+
+function briefPyramid(L){
+  const cap=S.pyramidCap, t=pyramidTotals(cap), v=vestKg();
+  L.push('## Holland pyramid (Saturdays)');
+  L.push(`- Current cap: rounds 1–${cap} = ${t.parts.map(p=>`${p.reps} ${p.n}`).join(', ')} (**${t.total} reps**)`);
+  L.push(`- Next cap up (${cap+1}) would be ${pyramidTotals(cap+1).total} reps — the total grows with the square of the cap.`);
+  L.push(cap>=VEST_FROM_CAP
+    ? `- Vest alternation is active (starts at cap ${VEST_FROM_CAP}). This week is a **${isVestWeek()?'vest':'no-vest'}** week; load ${v==null?'not set':v.toFixed(1)+' kg'}.`
+    : `- No vest yet — alternation starts at cap ${VEST_FROM_CAP}, below that adding a round is the cheaper progression. Suggested load when it starts: ${v==null?'unknown (no bodyweight logged)':v.toFixed(1)+' kg'}.`);
+  const rows=Object.keys(S.pyramidLog||{}).sort().slice(-BRIEF.pyramids).reverse();
+  if(rows.length) L.push(`- Logged sessions: ${rows.map(d=>{
+    const e=S.pyramidLog[d]||{};
+    return `${d} cap ${e.cap}${e.vest?` +${e.vest} kg`:''}`;
+  }).join(' · ')}`);
+  L.push('');
+}
+
+function briefRecovery(L){
+  const days=Object.keys(S.whoop||{}).sort().slice(-BRIEF.recovery)
+    .map(d=>({d, ...(S.whoop[d]||{})})).filter(x=>x.recovery!=null);
+  L.push('## Recovery (WHOOP)');
+  if(!days.length){ L.push('- No recovery data recorded.', ''); return; }
+  days.reverse().forEach(x=>L.push(
+    `- ${x.d}: recovery ${x.recovery}%` +
+    `${x.sleep!=null?`, sleep ${x.sleep}%`:''}${x.hrv!=null?`, HRV ${Math.round(x.hrv)} ms`:''}${x.rhr!=null?`, RHR ${x.rhr}`:''}` +
+    `${x.strain!=null?`, strain ${x.strain.toFixed(1)}`:''}`));
+  L.push(`- Mean recovery across these ${days.length} days: **${Math.round(avg(days.map(x=>x.recovery)))}%**`);
+  L.push('');
+}
+
+function briefNotes(L){
+  const notes=Object.keys(S.logs||{}).filter(d=>((S.logs[d]||{}).note||'').trim())
+    .sort().slice(-BRIEF.notes).reverse();
+  if(!notes.length) return;
+  L.push('## Session notes (most recent first)');
+  notes.forEach(d=>L.push(`- ${d}: ${S.logs[d].note.trim()}`));
+  L.push('');
+}
+
+function coachBrief(){
+  const L=[];
+  L.push(`# Training log — week ${weeksIn()+1}`);
+  L.push(`Exported ${todayISO} (${DAY_NAME[todayDow]}). Programme started ${S.startDate}.`);
+  L.push('');
+  L.push('## The programme');
+  L.push('Lean bulk. Six trainable days a week on a fixed split:');
+  ORDER.forEach(d=>L.push(`- **${DAY_NAME[d]}** — ${SCHEDULE[d].title}${SCHEDULE[d].tag?` · ${SCHEDULE[d].tag}`:''}`));
+  L.push('');
+  briefBodyweight(L);
+  briefWaist(L);
+  briefConsistency(L);
+  briefLifts(L);
+  briefPyramid(L);
+  briefRecovery(L);
+  briefNotes(L);
+  L.push('## What I want from you');
+  L.push('Read this as a strength coach seeing it cold. Short and specific, and push back where the numbers do not support what the app is telling me.');
+  L.push('');
+  L.push('1. Is the bulk actually on track? Weight, waist and rate together — not the scale on its own.');
+  L.push('2. Which lifts are genuinely progressing and which have stalled? For each stall, name the one variable to change and what to change it to.');
+  L.push('3. Does anything in the recovery data mean next week should be heavier, lighter, or the same?');
+  L.push('4. One thing worth fixing in the programme itself — or say it is fine and why.');
+  return L.join('\n');
+}
+
+/* Clipboard from an installed PWA is less reliable than it looks: Safari
+   denies the async API in some contexts and there is no error worth
+   showing the user, so fall through to the old selection-based copy, and
+   if that fails too, surface the text to copy by hand rather than
+   pretending it worked. */
+async function copyText(txt){
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(txt);
+      return true;
+    }
+  }catch(e){}
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=txt;
+    ta.setAttribute('readonly','');
+    ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0,txt.length);
+    const ok=document.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  }catch(e){ return false; }
+}
+
 /* ---------------- views ---------------- */
 const VIEWS = {};
 
@@ -1115,6 +1327,22 @@ VIEWS.progress = () => {
         best ${fmtSet(best.best)} · ${h.length} entr${h.length===1?'y':'ies'}</div></div>`}).join('')
       :`<div class="empty">Log a set on the Today page and your progression appears here.</div>`}
     <div class="pnote">e1RM is an Epley estimate from your best set — useful for comparing a heavy triple against a lighter set of ten, not a number to go and test.</div>
+  </section>
+
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Ask Claude</div><div class="ptag">No API key</div></div>
+    <div class="pnote">Packs this whole log — trend, waist, every lift with its stalls, the pyramid, recovery, your notes —
+      into one message and hands it to you. Paste it into Claude and ask. Your subscription covers the conversation;
+      nothing here calls an API and nothing leaves this phone until you paste it.</div>
+    <div class="wrow">
+      ${navigator.share?`<button id="briefShare" class="primary">Send to Claude</button>`:''}
+      <button id="briefCopy"${navigator.share?'':' class="primary"'}>Copy briefing</button>
+      <a class="briefopen" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer">Open Claude &#8599;</a>
+    </div>
+    <details id="briefWrap">
+      <summary>Preview what gets sent</summary>
+      <pre class="brief" id="briefText">${escapeHtml(coachBrief())}</pre>
+    </details>
   </section>`;
 };
 
@@ -1339,6 +1567,47 @@ function wireProgress(){
     S.weights=S.weights.filter(x=>x.d!==d);
     save(); render(); toast('Weigh-in deleted.');
   });
+
+  /* Built fresh on the tap rather than reusing the string rendered into the
+     preview: a set logged between opening Progress and pressing the button
+     should be in what you send. */
+  const share=document.getElementById('briefShare');
+  if(share) share.onclick=async()=>{
+    try{
+      await navigator.share({title:'Training log', text:coachBrief()});
+    }catch(e){
+      // AbortError is the user closing the sheet — not a failure.
+      if(e && e.name==='AbortError') return;
+      if(await copyText(coachBrief())) toast('Sharing unavailable — copied instead.');
+      else revealBrief('Sharing failed. The text is below — copy it by hand.');
+    }
+  };
+
+  const copy=document.getElementById('briefCopy');
+  if(copy) copy.onclick=async()=>{
+    if(await copyText(coachBrief())) toast('Briefing copied. Paste it into Claude.');
+    else revealBrief('Could not reach the clipboard. Select the text below and copy it.');
+  };
+}
+
+/* Last resort when neither clipboard path works: open the preview, select
+   the text, and say so — better than a button that silently does nothing. */
+function revealBrief(msg){
+  const wrap=document.getElementById('briefWrap'), pre=document.getElementById('briefText');
+  if(wrap) wrap.open=true;
+  if(pre){
+    // Guarded: this whole function only runs because something else already
+    // failed, and it must not throw on top of that.
+    if(pre.scrollIntoView) pre.scrollIntoView({block:'nearest'});
+    try{
+      const range=document.createRange();
+      range.selectNodeContents(pre);
+      const sel=getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }catch(e){}
+  }
+  toast(msg);
 }
 
 function wireSetup(){
