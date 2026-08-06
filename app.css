@@ -251,6 +251,18 @@ svg.chart{display:block;width:100%;height:150px;margin-top:16px;overflow:visible
   align-items:center;justify-content:center;background:var(--blue);color:var(--bone);
   padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));font-size:13px;
 }
+/* The root cause of every "banner won't go away" report this session: an
+   author stylesheet's `display` declaration beats the browser's built-in
+   `[hidden]{display:none}` whenever both target the same property, REGARDLESS
+   of the element's actual hidden attribute or selector specificity — author
+   origin wins over user-agent origin before specificity is even compared.
+   app.js was correctly toggling .hidden the entire time; this rule is what
+   silently threw that away and rendered the bar as a visible flex box no
+   matter what. Confirmed in real Chromium, not just by reading the spec:
+   getComputedStyle(el).display was 'flex' with the hidden attribute present.
+   This selector's specificity (0,2,0) beats the bare .updatebar rule above
+   (0,1,0), so within author-origin rules it correctly takes precedence. */
+.updatebar[hidden]{display:none}
 .updatebar button{background:var(--bone);color:var(--ink);border-color:var(--bone);flex:none}
 .updatebar #updateDismiss{
   background:transparent;color:var(--bone);border-color:transparent;
