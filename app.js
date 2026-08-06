@@ -1319,6 +1319,21 @@ async function readCacheVersion(){
       const mine=(await caches.keys()).filter(k=>k.startsWith('bnb-')).sort((a,b)=>verNum(a)-verNum(b));
       next = mine.length ? mine.at(-1).replace(/^bnb-/,'') : '';
     }
+    /* If the running version has caught up to whatever the banner promised,
+       the promise is kept — hide it and stop caring about it. This has to
+       run unconditionally, every call, not just when cacheVersion changes:
+       the failure this fixes is a page that was already correctly on the
+       new version by the time this ever runs (e.g. restored from the
+       back/forward cache after the worker activated while the page was
+       frozen — reloadOnce()'s controllerchange listener is not reliably
+       delivered to a frozen page, so the reload that would have cleared
+       the banner never happened, and it sat there claiming an update was
+       "ready" that had, in fact, already landed). */
+    if(pendingVersion && next===pendingVersion){
+      pendingVersion='';
+      const bar=document.getElementById('updatebar');
+      if(bar) bar.hidden=true;
+    }
     if((next||'')===cacheVersion) return;
     cacheVersion = next||'';
     updateFoot();
@@ -1438,6 +1453,15 @@ Whoop.today().then(whoopRerenderIfShown);
   history.replaceState(null,'',location.pathname+location.hash);
   if(w==='connected') Whoop.today(true).then(whoopRerenderIfShown);
 })();
+
+/* event.persisted means this page came from the back/forward cache — the
+   entire JS heap and DOM were frozen and are now resuming exactly as they
+   were, rather than a fresh script execution. A controllerchange that
+   happened while frozen is not reliably delivered, so reloadOnce() can
+   simply never run — an update banner shown before the freeze stays shown
+   forever even after the update it announced has already completed.
+   readCacheVersion() re-checks reality against what the banner promised. */
+window.addEventListener('pageshow', e => { if(e.persisted) readCacheVersion(); });
 
 window.addEventListener('online', ()=>{ Sync.reset(); Sync.schedule(()=>S, adoptMerged, 400); });
 document.addEventListener('visibilitychange', ()=>{
