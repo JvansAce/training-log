@@ -97,8 +97,10 @@ const ADDINS = [
 const iso = d => d.toLocaleDateString('en-CA');
 let todayISO = iso(new Date());
 let todayDow = new Date().getDay();
+// pyramidCap starts at 4 (150 reps), not 6 (315). A fresh install opening on
+// a session you cannot finish teaches you to ignore the number.
 const DEFAULTS = {startDate:todayISO, weights:[], logs:{}, lifts:{}, whoop:{},
-  pyramidCap:6, vestKg:null, vestPhase:0, calAdjust:0, updatedAt:0};
+  pyramidCap:4, vestKg:null, vestPhase:0, calAdjust:0, updatedAt:0};
 let S = structuredClone(DEFAULTS);
 let viewing = todayDow;
 let editingDate = null;   // set to an ISO date to back-fill a past day instead of today
@@ -356,10 +358,16 @@ function suggestedVestKg(){
   return Math.round(bw*pct*2)/2;          // nearest 0.5 kg
 }
 const vestKg = () => S.vestKg!=null ? S.vestKg : suggestedVestKg();
-/* One week add a round, the next keep the rounds and add the vest.
+/* Alternation does NOT start from week one. While the cap is still low,
+   adding a round is the cheap progression — cap 4 to 5 is 150 reps to 225 —
+   so just climb. The vest earns its place once a round starts costing 100+
+   reps, which is around cap 6. Below that, alternating would be adding load
+   to someone who hasn't finished learning the movement volume yet.
    vestPhase only flips which parity carries the vest, for when the real
    schedule drifts out of step with the counter. */
-const isVestWeek = () => ((weeksIn() + (S.vestPhase||0)) % 2) === 1;
+const VEST_FROM_CAP = 6;
+const isVestWeek = () =>
+  S.pyramidCap >= VEST_FROM_CAP && ((weeksIn() + (S.vestPhase||0)) % 2) === 1;
 
 function itemsFor(dow){
   return SCHEDULE[dow].items.map(it=>{
@@ -679,27 +687,33 @@ const fmtMMSS = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 
 function pyramidPanel(){
   const cap=S.pyramidCap, t=pyramidTotals(cap);
+  const climbing = cap < VEST_FROM_CAP;
   const on=isVestWeek(), v=vestKg();
   const kg = v==null ? '–' : v.toFixed(1);
+  const next = pyramidTotals(Math.min(10,cap+1));
+
   return `
   <div class="wrow"><button data-cap="-1">– round</button>
     <button data-cap="1">+ round</button>
-    <span class="ptag">cap ${cap} · build to 10</span></div>
+    <span class="ptag">cap ${cap}${climbing?` · vest at ${VEST_FROM_CAP}`:' · build to 10'}</span></div>
   <div class="pnote">Rounds 1–${cap} adds up to ${t.parts.map(p=>`<b>${p.reps}</b> ${p.n}`).join(' · ')}
-    — <b>${t.total}</b> reps.</div>
+    — <b>${t.total}</b> reps.${cap<10?` One more round makes it <b>${next.total}</b>.`:''}</div>
   <div class="wrow vestrow">
-    <span class="ptag">${on?'Vest week':'Bodyweight week'}</span>
-    ${on?`<button data-vest="-0.5">–</button><b class="vestkg">${kg} kg</b><button data-vest="0.5">+</button>
-      ${S.vestKg!=null?`<button data-vest="auto">auto</button>`:''}`
+    <span class="ptag">${climbing?'Climbing' : on?'Vest week':'Bodyweight week'}</span>
+    ${climbing?`<span class="ptag">vest starts at cap ${VEST_FROM_CAP}</span>`
+      :on?`<button data-vest="-0.5">–</button><b class="vestkg">${kg} kg</b><button data-vest="0.5">+</button>
+        ${S.vestKg!=null?`<button data-vest="auto">auto</button>`:''}`
       :`<span class="ptag">next week: ${kg} kg</span>`}
-    <button id="vestSwap">swap</button>
+    ${climbing?'':`<button id="vestSwap">swap</button>`}
   </div>
-  <div class="pnote">${on
-    ? `Same ${cap} rounds as last week, wearing the vest — that is the progression this week. Add the round next week instead.`
+  <div class="pnote">${climbing
+    ? `Set the cap to the round you can actually finish — that is what it is for, not a target you are failing. Add a round once ${cap} goes through cleanly. The vest stays off until cap ${VEST_FROM_CAP}, because until then adding a round is the cheaper way to progress.`
+    : on
+    ? `Same ${cap} rounds as last week, wearing the vest — that is this week's progression. Add the round next week instead.`
     : `Add a round if last week's ${cap} moved well. Next week is the same cap with the vest on.`}
-    ${S.vestKg!=null?' Weight set by hand — <b>auto</b> returns it to tracking your bodyweight.'
-      :' Suggested weight tracks your bodyweight and cap; adjust it and it sticks.'}
-    Use <b>swap</b> if the vest lands on the wrong week.</div>`;
+    ${climbing?'':(S.vestKg!=null?' Weight set by hand — <b>auto</b> returns it to tracking your bodyweight.'
+      :' Suggested weight tracks your bodyweight and cap; adjust it and it sticks.')
+      + ' Use <b>swap</b> if the vest lands on the wrong week.'}</div>`;
 }
 
 VIEWS.today = () => {
