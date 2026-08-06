@@ -25,6 +25,9 @@ const RECENT_DAYS = 3;
 const MAX_BODY = 2_000_000;     // 2 MB ceiling on a pushed state, measured in bytes
 
 /* ---------- merge ---------- */
+// Works for both the numeric indices legacy clients still send and the
+// string keys current ones do, including a mix of the two mid-migration.
+const cmp = (p, q) => String(p) < String(q) ? -1 : String(p) > String(q) ? 1 : 0;
 const daysAgo = n => {
   const d = new Date(); d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
@@ -49,13 +52,17 @@ export function mergeState(stored, incoming){
     startDate : newer.startDate  ?? older.startDate  ?? null,
     pyramidCap: newer.pyramidCap ?? older.pyramidCap ?? 6,
     calAdjust : newer.calAdjust  ?? older.calAdjust  ?? 0,
-    weights: [], logs: {}, lifts: {}, whoop: {}
+    weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {}
   };
 
-  const wmap = new Map();
-  (a.weights || []).forEach(w => wmap.set(w.d, w));
-  (b.weights || []).forEach(w => wmap.set(w.d, w));   // same morning: newest push wins
-  out.weights = [...wmap.values()].sort((x, y) => x.d < y.d ? -1 : 1);
+  const byDate = (xs = [], ys = []) => {
+    const m = new Map();
+    xs.forEach(v => m.set(v.d, v));
+    ys.forEach(v => m.set(v.d, v));   // same morning: newest push wins
+    return [...m.values()].sort((x, y) => x.d < y.d ? -1 : 1);
+  };
+  out.weights = byDate(a.weights, b.weights);
+  out.waist   = byDate(a.waist,   b.waist);
 
   const dates = new Set([...Object.keys(a.logs || {}), ...Object.keys(b.logs || {})]);
   for (const d of dates){
@@ -68,8 +75,12 @@ export function mergeState(stored, incoming){
       out.logs[d] = { done: pick.done || [], mob: pick.mob || [], fuel: !!pick.fuel, note: pick.note || '' };
     } else {
       out.logs[d] = {
-        done: [...new Set([...(la?.done || []), ...(lb?.done || [])])].sort((p, q) => p - q),
-        mob : [...new Set([...(la?.mob  || []), ...(lb?.mob  || [])])].sort((p, q) => p - q),
+        // done holds stable exercise keys now (mob is still indices into a
+        // fixed list). A numeric comparator returns NaN for strings and
+        // leaves the order unspecified, so compare generically — this is
+        // presentation order only; membership and count are what matter.
+        done: [...new Set([...(la?.done || []), ...(lb?.done || [])])].sort(cmp),
+        mob : [...new Set([...(la?.mob  || []), ...(lb?.mob  || [])])].sort(cmp),
         fuel: !!(la?.fuel || lb?.fuel),
         note: la?.note || lb?.note || ''
       };
@@ -82,6 +93,14 @@ export function mergeState(stored, incoming){
     ((a.lifts || {})[id] || []).forEach(e => m.set(e.d, e));
     ((b.lifts || {})[id] || []).forEach(e => m.set(e.d, e));
     out.lifts[id] = [...m.values()].sort((x, y) => x.d < y.d ? -1 : 1);
+  }
+
+  // What the pyramid actually was on a given Saturday — cap and vest load.
+  // Additive by date: it is a record of a session that happened, so an older
+  // device that still remembers a week this one never saw should keep it.
+  const pyrDates = new Set([...Object.keys(a.pyramidLog || {}), ...Object.keys(b.pyramidLog || {})]);
+  for (const d of pyrDates){
+    out.pyramidLog[d] = (b.pyramidLog || {})[d] ?? (a.pyramidLog || {})[d];
   }
 
   // Recorded WHOOP readings, keyed by date. Purely additive across devices:

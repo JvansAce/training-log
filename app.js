@@ -11,61 +11,61 @@ const CHECK = '<svg viewBox="0 0 12 12" fill="none" stroke="#141824" stroke-widt
 const SCHEDULE = {
   1:{label:'MO',color:'#4C7BE8',title:'Tennis',tag:'Athletic day',
      note:'Your conditioning is covered. No lifting today. Carb meal 2–3h before, shake after.',
-     items:[{n:'Dynamic warm-up',p:'leg swings · lunge w/ rotation · shoulder circles · 3 short sprints'},
-            {n:'Tennis',p:'play'},
-            {n:'Core finisher',p:'ab wheel or plank 3×45s · Pallof press 3×10 / side'},
-            {n:'Post-match shake',p:'30g whey + 300ml milk + banana'}]},
+     items:[{k:'mo-warm',n:'Dynamic warm-up',p:'leg swings · lunge w/ rotation · shoulder circles · 3 short sprints'},
+            {k:'mo-tennis',n:'Tennis',p:'play'},
+            {k:'mo-core',n:'Core finisher',p:'ab wheel or plank 3×45s · Pallof press 3×10 / side'},
+            {k:'mo-shake',n:'Post-match shake',p:'30g whey + 300ml milk + banana'}]},
   2:{label:'TU',color:'#E23B3B',title:'Upper · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'The heavy day. Add weight or a rep whenever you hit the top of the range.',
-     items:[{n:'Band pull-aparts + arm circles',p:'warm-up 2×15'},
-            {n:'Weighted pull-ups',p:'4 × 5–8 — add weight at 8',id:'wpullup'},
-            {n:'Incline DB press',p:'4 × 8–10',id:'incline'},
-            {n:'Barbell or DB row',p:'4 × 8–10',id:'row'},
-            {n:'Overhead press',p:'3 × 8–10',id:'ohp'},
-            {n:'Dips',p:'3 × to 2 reps shy of failure',id:'dips'},
+     items:[{k:'tu-warm',n:'Band pull-aparts + arm circles',p:'warm-up 2×15'},
+            {k:'tu-wpullup',n:'Weighted pull-ups',p:'4 × 5–8 — add weight at 8',id:'wpullup'},
+            {k:'tu-incline',n:'Incline DB press',p:'4 × 8–10',id:'incline'},
+            {k:'tu-row',bar:true,n:'Barbell or DB row',p:'4 × 8–10',id:'row'},
+            {k:'tu-ohp',bar:true,n:'Overhead press',p:'3 × 8–10',id:'ohp'},
+            {k:'tu-dips',n:'Dips',p:'3 × to 2 reps shy of failure',id:'dips'},
             // Shares the 'lat' id with Friday on purpose: one combined
             // progression history rather than two half-pictures.
-            {n:'Lateral raises',p:'3 × 12–15 — strict, no swing',id:'lat'}]},
+            {k:'tu-lat',n:'Lateral raises',p:'3 × 12–15 — strict, no swing',id:'lat'}]},
   3:{label:'WE',color:'#E23B3B',title:'Lower · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'If Monday tennis left you wrecked, swap this with Tuesday.',
-     items:[{n:'Leg swings · hip circles · 90/90',p:'warm-up 5 min'},
-            {n:'Squat or trap bar deadlift',p:'4 × 5–8',id:'squat'},
-            {n:'Romanian deadlift',p:'3 × 8–10',id:'rdl'},
+     items:[{k:'we-warm',n:'Leg swings · hip circles · 90/90',p:'warm-up 5 min'},
+            {k:'we-squat',bar:true,n:'Squat or trap bar deadlift',p:'4 × 5–8',id:'squat'},
+            {k:'we-rdl',bar:true,n:'Romanian deadlift',p:'3 × 8–10',id:'rdl'},
             // The RDL is pure hip extension. The short head of the biceps
             // femoris only crosses the knee, so it barely works in any
             // hinge — this is the movement that actually trains it.
-            {n:'Leg curl or Nordic',p:'3 × 8–12',id:'legcurl'},
-            {n:'Bulgarian split squat',p:'3 × 10 / leg',id:'bss'},
-            {n:'Calf raises',p:'3 × 15',id:'calf'},
-            {n:'Hanging leg raises',p:'3 × 12 — add a dumbbell between the feet when 12 is easy',id:'hlr'}]},
+            {k:'we-legcurl',n:'Leg curl or Nordic',p:'3 × 8–12',id:'legcurl'},
+            {k:'we-bss',n:'Bulgarian split squat',p:'3 × 10 / leg',id:'bss'},
+            {k:'we-calf',n:'Calf raises',p:'3 × 15',id:'calf'},
+            {k:'we-hlr',n:'Hanging leg raises',p:'3 × 12 — add a dumbbell between the feet when 12 is easy',id:'hlr'}]},
   4:{label:'TH',color:'#D9A13B',title:'Easy Cardio',tag:'Zone 2 only',
      note:'Conversational pace. If WHOOP recovery is red, take the full rest instead — this is the first thing to drop.',
-     items:[{n:'Zone 2',p:'20–35 min easy jog, bike or brisk hike'},
-            {n:'Daily mobility',p:'see below'}]},
+     items:[{k:'th-z2',n:'Zone 2',p:'20–35 min easy jog, bike or brisk hike'},
+            {k:'th-mob',n:'Daily mobility',p:'see below'}]},
   5:{label:'FR',color:'#E23B3B',title:'Upper · Volume',tag:'Rest 60–90s',restSec:75,
      note:'Chase the pump here. Side and rear delts are what make the suit fit — and they only get trained if you actually load them.',
-     items:[{n:'Band pull-aparts',p:'warm-up 2×15'},
-            {n:'Pull-ups',p:'4 × max reps',id:'pullup'},
-            {n:'Flat DB press',p:'4 × 10–12',id:'flat'},
-            {n:'Cable or band row',p:'3 × 12',id:'crow'},
-            {n:'Lateral raises',p:'4 × 15',id:'lat'},
+     items:[{k:'fr-warm',n:'Band pull-aparts',p:'warm-up 2×15'},
+            {k:'fr-pullup',n:'Pull-ups',p:'4 × max reps',id:'pullup'},
+            {k:'fr-flat',n:'Flat DB press',p:'4 × 10–12',id:'flat'},
+            {k:'fr-crow',n:'Cable or band row',p:'3 × 12',id:'crow'},
+            {k:'fr-lat',n:'Lateral raises',p:'4 × 15',id:'lat'},
             // Promoted from a warm-up to real loaded sets — rear delts had
             // no working volume anywhere in the week.
-            {n:'Face pulls',p:'3 × 15 — load it, pause at the face',id:'facepull'},
-            {n:'Curls + triceps',p:'3 × 12 each',id:'arms'}]},
-  6:{label:'SA',color:'#E23B3B',title:'Lower + Pyramid',tag:'Treat it as a session',
+            {k:'fr-facepull',n:'Face pulls',p:'3 × 15 — load it, pause at the face',id:'facepull'},
+            {k:'fr-arms',n:'Curls + triceps',p:'3 × 12 each',id:'arms'}]},
+  6:{label:'SA',color:'#E23B3B',title:'Lower + Pyramid',tag:'Treat it as a session',restSec:180,
      note:'The pyramid is a full session element, not an add-on. Alternate the two ways of progressing it: one week add a round, the next keep the same rounds and wear the vest.',
-     items:[{n:'Front or goblet squat',p:'4 × 8',id:'fsquat'},
-            {n:'Box jumps',p:'4 × 6 explosive, full rest',id:'boxjump'},
-            {n:'Calf raises',p:'3 × 12–15 — pause at the top',id:'calf'},
+     items:[{k:'sa-fsquat',bar:true,n:'Front or goblet squat',p:'4 × 8',id:'fsquat'},
+            {k:'sa-boxjump',n:'Box jumps',p:'4 × 6 explosive, full rest',id:'boxjump'},
+            {k:'sa-calf',n:'Calf raises',p:'3 × 12–15 — pause at the top',id:'calf'},
             // Loaded flexion, so abs get progressive overload like anything
             // else. The pyramid's sit-ups are endurance work, not growth.
-            {n:'Cable crunch or weighted sit-up',p:'3 × 10–15 — add load, not reps',id:'crunch'},
-            {n:'PYRAMID',p:'',id:'pyramid'}]},
+            {k:'sa-crunch',n:'Cable crunch or weighted sit-up',p:'3 × 10–15 — add load, not reps',id:'crunch'},
+            {k:'sa-pyramid',n:'PYRAMID',p:'',id:'pyramid'}]},
   0:{label:'SU',color:'#868FA6',title:'Full Rest',tag:'Growth happens here',
      note:'Nothing structured. Walk, stretch, eat. Long mobility is the only box worth ticking.',
-     items:[{n:'Long mobility (20 min)',p:'deep squat · couch stretch · thoracic rotations · pigeon · calves'},
-            {n:'Weekly weigh-in average check',p:'see Progress'}]}
+     items:[{k:'su-mob',n:'Long mobility (20 min)',p:'deep squat · couch stretch · thoracic rotations · pigeon · calves'},
+            {k:'su-weigh',n:'Weekly weigh-in average check',p:'see Progress'}]}
 };
 const ORDER = [1,2,3,4,5,6,0];
 
@@ -99,8 +99,8 @@ let todayISO = iso(new Date());
 let todayDow = new Date().getDay();
 // pyramidCap starts at 4 (150 reps), not 6 (315). A fresh install opening on
 // a session you cannot finish teaches you to ignore the number.
-const DEFAULTS = {startDate:todayISO, weights:[], logs:{}, lifts:{}, whoop:{},
-  pyramidCap:4, vestKg:null, vestPhase:0, calAdjust:0, updatedAt:0};
+const DEFAULTS = {startDate:todayISO, weights:[], waist:[], logs:{}, lifts:{}, whoop:{},
+  pyramidLog:{}, pyramidCap:4, vestKg:null, vestPhase:0, barKg:20, calAdjust:0, updatedAt:0};
 let S = structuredClone(DEFAULTS);
 let viewing = todayDow;
 let editingDate = null;   // set to an ISO date to back-fill a past day instead of today
@@ -120,6 +120,28 @@ function syncClock(){
   return true;
 }
 
+/* Session ticks used to be stored as indices into that weekday's item list,
+   so inserting an exercise silently changed what every past tick referred
+   to. They are keys now. Legacy numeric arrays are translated through the
+   CURRENT item list for that date's weekday — approximate for days logged
+   before the list changed, which is unavoidable and was already true, but
+   it stops the drift from continuing. */
+function migrateDoneKeys(){
+  let changed=false;
+  for(const [d,log] of Object.entries(S.logs||{})){
+    if(!log || !Array.isArray(log.done)) continue;
+    if(!log.done.some(v=>typeof v === 'number')) continue;
+    const items=(SCHEDULE[new Date(d+'T00:00:00').getDay()]||{}).items||[];
+    log.done=[...new Set(log.done.map(v=>
+      typeof v === 'number' ? (items[v]||{}).k : v
+    ).filter(Boolean))];
+    changed=true;
+  }
+  // Write it back once rather than redoing the translation on every load —
+  // and so what is on disk matches what is in memory.
+  if(changed){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){} }
+}
+
 function load(){
   try{
     const raw = localStorage.getItem(STORE_KEY);
@@ -130,9 +152,12 @@ function load(){
       // this try — and since that runs before the first render(), the app
       // never draws anything again until someone clears storage by hand.
       if(!Array.isArray(S.weights)) S.weights = [];
+      if(!Array.isArray(S.waist)) S.waist = [];
+      if(!S.pyramidLog || typeof S.pyramidLog !== 'object') S.pyramidLog = {};
       if(!S.logs || typeof S.logs !== 'object') S.logs = {};
       if(!S.lifts || typeof S.lifts !== 'object') S.lifts = {};
       if(!S.whoop || typeof S.whoop !== 'object') S.whoop = {};
+      migrateDoneKeys();
     }
   }catch(e){
     toast('Saved data could not be read. Starting fresh.');
@@ -178,9 +203,11 @@ function adoptMerged(merged){
   render();
 }
 function stripLocal(o){
-  const {startDate,weights,logs,lifts,whoop,pyramidCap,vestKg,vestPhase,calAdjust,updatedAt}=o;
+  const {startDate,weights,waist,logs,lifts,whoop,pyramidLog,
+    pyramidCap,vestKg,vestPhase,barKg,calAdjust,updatedAt}=o;
   return {updatedAt:updatedAt||0,startDate,pyramidCap,
-    vestKg:vestKg??null,vestPhase:vestPhase||0,calAdjust,weights,logs,lifts,whoop:whoop||{}};
+    vestKg:vestKg??null,vestPhase:vestPhase||0,barKg:barKg??20,calAdjust,
+    weights,waist:waist||[],logs,lifts,whoop:whoop||{},pyramidLog:pyramidLog||{}};
 }
 document.addEventListener('focusout',()=>{
   if(!deferredMerge) return;
@@ -395,6 +422,64 @@ function refText(id,activeDate){
   if(mb&&lb&&beats(mb,lb)) s+=' ▲ beaten';
   return s;
 }
+/* Reads the prescribed set/rep scheme out of the item's own text, so the
+   program stays the single source of truth rather than duplicating rep
+   ranges into a second table that could drift. Returns null for anything
+   not a clean numeric range ("4 × max reps", "3 × to 2 reps shy"), which
+   correctly means no target is suggested for those. */
+function parseScheme(p){
+  const m = /(\d+)\s*×\s*(\d+)(?:\s*[–-]\s*(\d+))?/.exec(p||'');
+  if(!m) return null;
+  const lo=+m[2], hi=m[3]?+m[3]:+m[2];
+  return { sets:+m[1], lo, hi };
+}
+/* Conservative, and smaller for light lifts: +2.5 kg on a 10 kg lateral
+   raise is a 25% jump, which is not a progression, it is a new exercise. */
+const loadStep = kg => kg < 15 ? 1 : 2.5;
+
+/* The program says "add weight or a rep whenever you hit the top of the
+   range". This works out what that means for this lift, today, instead of
+   leaving it as arithmetic to do between sets. */
+function nextTarget(id, activeDate, prescription){
+  const sch = parseScheme(prescription);
+  if(!sch) return null;
+  const h = (S.lifts[id]||[]).filter(x=>x.d!==activeDate).sort((a,b)=>a.d<b.d?-1:1);
+  const last = h.at(-1);
+  const sets = setsOf(last);
+  if(!sets.length) return null;
+
+  const working = sets.filter(x=>x.reps>0);
+  if(!working.length) return null;
+  const minReps = Math.min(...working.map(x=>x.reps));
+  const kg = working[0].kg;
+
+  // Every working set at or above the top of the range is the condition the
+  // program actually names — not just the best set, which can hide a set
+  // that fell apart.
+  if(minReps >= sch.hi){
+    if(kg==null) return { text:`all sets at ${sch.hi} — time to add load`, kg:null };
+    const next = kg + loadStep(kg);
+    return { text:`hit ${sch.hi}s — go <b>${next} kg</b> × ${sch.lo}`, kg:next };
+  }
+  const target = Math.min(minReps+1, sch.hi);
+  if(kg==null) return { text:`chase ${target} reps`, kg:null };
+  return { text:`stay ${kg} kg — chase ${target} reps`, kg };
+}
+
+/* Plate maths for a barbell, per side. Anything the available plates cannot
+   express exactly is reported as such rather than silently rounded. */
+const PLATES = [25,20,15,10,5,2.5,1.25];
+function platesFor(total, bar){
+  if(total==null || total<bar) return null;
+  let perSide=(total-bar)/2, out=[];
+  for(const pl of PLATES){
+    const n=Math.floor((perSide+1e-9)/pl);
+    if(n>0){ out.push(`${n}×${pl}`); perSide=+(perSide-n*pl).toFixed(4); }
+  }
+  if(perSide>0.01) return null;
+  return out.length ? out.join(' + ') : 'bar only';
+}
+
 function setRowHtml(id,i,s){
   return `<div class="setrow" data-set="${i}">
     <span class="setno">${i+1}</span>
@@ -405,16 +490,26 @@ function setRowHtml(id,i,s){
       value="${s&&s.reps!=null?s.reps:''}" data-srep="${id}:${i}" aria-label="Set ${i+1} reps">
   </div>`;
 }
-function logRow(id,canEdit,activeDate){
+function logRow(id,canEdit,activeDate,item){
   if(!canEdit) return `<div class="logref">${refText(id,activeDate)}</div>`;
   const mine=(S.lifts[id]||[]).find(x=>x.d===activeDate);
   const mySets=setsOf(mine);
   const shown=Math.max(1,mySets.length);
   const rows=[];
   for(let i=0;i<shown;i++) rows.push(setRowHtml(id,i,mySets[i]));
+
+  const tgt = nextTarget(id, activeDate, item && item.p);
+  // Plates for whatever this session is actually working at: today's entered
+  // load if there is one, otherwise the suggested target.
+  const bar = S.barKg ?? 20;
+  const working = mySets.find(x=>x.kg!=null)?.kg ?? (tgt && tgt.kg);
+  const plates = item && item.bar ? platesFor(working, bar) : null;
+
   return `<div class="logrow" data-log="${id}">
     <div class="setrows">${rows.join('')}</div>
     ${shown<MAX_SETS?`<button type="button" class="addset" data-addset="${id}">+ set</button>`:''}
+    ${tgt?`<div class="target">→ ${tgt.text}</div>`:''}
+    ${plates?`<div class="plates">${working} kg = ${bar} bar + ${plates} <span>per side</span></div>`:''}
     <div class="logref">${refText(id,activeDate)}</div>
   </div>`;
 }
@@ -649,35 +744,114 @@ function whoopSetupPanel(){
    Floating widget lives outside #view (see index.html), so it survives a
    route change while a rest is still counting down — wired once at boot,
    not inside wireToday(). */
-let restTimer = { total:0, remaining:0, intervalId:null };
+/* Wall-clock, not a decrementing counter. iOS throttles and eventually
+   suspends timers in a backgrounded tab — which is exactly what a locked
+   phone during a 2:30 rest is — so a counter that subtracts one per tick
+   drifts behind or stops entirely. Deriving the remainder from a target
+   timestamp means however long the tab was frozen, the number is right the
+   instant it comes back. endsAt is mirrored into sessionStorage so a
+   reload mid-rest resumes rather than losing the timer. */
+const REST_KEY='bnb.rest.v1';
+let restTimer = { total:0, endsAt:0, intervalId:null };
+const restRemaining = () =>
+  restTimer.endsAt ? Math.max(0, Math.round((restTimer.endsAt - Date.now())/1000)) : 0;
 function renderRestTimer(){
   const el=document.getElementById('resttimer');
   if(!el) return;
   if(!restTimer.total){ el.hidden=true; return; }
   el.hidden=false;
-  const r=Math.max(restTimer.remaining,0);
+  const r=restRemaining();
   el.querySelector('.rt-time').textContent=fmtMMSS(r);
   el.querySelector('.rt-bar').style.width=`${Math.max(0,(r/restTimer.total)*100)}%`;
 }
 function stopRestTimer(){
   clearInterval(restTimer.intervalId);
-  restTimer={total:0,remaining:0,intervalId:null};
+  restTimer={total:0,endsAt:0,intervalId:null};
+  try{ sessionStorage.removeItem(REST_KEY); }catch(e){}
   renderRestTimer();
 }
-function startRestTimer(sec){
-  clearInterval(restTimer.intervalId);
-  restTimer={total:sec,remaining:sec,intervalId:null};
+let restDonePending=false;
+function tickRest(){
+  if(!restTimer.total) return;
+  if(restRemaining()<=0 && !restDonePending){
+    restDonePending=true;
+    clearInterval(restTimer.intervalId);
+    restTimer.intervalId=null;
+    toast('Rest done.');
+    if(navigator.vibrate) navigator.vibrate([200,100,200]);
+  }
   renderRestTimer();
-  restTimer.intervalId=setInterval(()=>{
-    restTimer.remaining--;
-    if(restTimer.remaining<=0){
-      clearInterval(restTimer.intervalId);
-      restTimer.intervalId=null;
-      toast('Rest done.');
-      if(navigator.vibrate) navigator.vibrate([200,100,200]);
-    }
-    renderRestTimer();
-  },1000);
+}
+function startRestTimer(sec, endsAt){
+  clearInterval(restTimer.intervalId);
+  restDonePending=false;
+  restTimer={ total:sec, endsAt: endsAt || Date.now()+sec*1000, intervalId:null };
+  try{ sessionStorage.setItem(REST_KEY, JSON.stringify({total:restTimer.total, endsAt:restTimer.endsAt})); }catch(e){}
+  renderRestTimer();
+  restTimer.intervalId=setInterval(tickRest, 500);
+}
+function resumeRestTimer(){
+  try{
+    const raw=sessionStorage.getItem(REST_KEY);
+    if(!raw) return;
+    const {total,endsAt}=JSON.parse(raw);
+    if(!total || !endsAt || endsAt-Date.now() <= 0){ sessionStorage.removeItem(REST_KEY); return; }
+    startRestTimer(total, endsAt);
+  }catch(e){}
+}
+
+/* Recovery over time. The daily readings have been accumulating in state
+   for weeks with nothing reading them — this is what makes that worth
+   having: whether recovery actually tracks the training week. */
+function recoveryChart(){
+  const days=Object.keys(S.whoop||{}).sort().slice(-30)
+    .map(d=>({d, v:(S.whoop[d]||{}).recovery})).filter(x=>x.v!=null);
+  if(days.length<3) return `<div class="empty">A few days of WHOOP recovery and the trend lands here.</div>`;
+  const W=100,H=44,bw=W/days.length;
+  const col=v=>v>=67?'#4FB477':v>=34?'#D9A13B':'#E23B3B';
+  const mean=Math.round(avg(days.map(x=>x.v)));
+  return `<svg class="chart" style="height:92px" viewBox="-1 -4 102 58" aria-label="Daily WHOOP recovery">
+    <line x1="0" y1="${H-(mean/100)*H}" x2="100" y2="${H-(mean/100)*H}" stroke="#2E3750" stroke-width=".6" stroke-dasharray="2 2"/>
+    ${days.map((x,i)=>{
+      const h=(x.v/100)*H;
+      return `<rect x="${(i*bw+bw*0.15).toFixed(2)}" y="${(H-h).toFixed(1)}" width="${(bw*0.7).toFixed(2)}"
+        height="${Math.max(h,1).toFixed(1)}" fill="${col(x.v)}" rx=".6"/>`;
+    }).join('')}
+    <text class="axis" x="0" y="${H+9}">${days[0].d.slice(5)}</text>
+    <text class="axis" x="100" y="${H+9}" text-anchor="end">mean ${mean}%</text></svg>`;
+}
+
+/* Waist against weight is the question a bulk actually turns on: gaining
+   with the waist flat is muscle, gaining with it climbing is not. */
+function waistNote(){
+  const w=[...(S.waist||[])].sort((a,b)=>a.d<b.d?-1:1);
+  if(w.length<2) return `<div class="pnote">Log your waist twice and the comparison against bodyweight shows up here.</div>`;
+  const first=w[0], last=w.at(-1);
+  const dCm=last.cm-first.cm;
+  const span=Math.round((new Date(last.d)-new Date(first.d))/864e5);
+  const ws=sortW();
+  const inRange=d=>ws.filter(x=>x.d<=d).at(-1);
+  const w0=inRange(first.d), w1=inRange(last.d);
+  const dKg=(w0&&w1)?w1.kg-w0.kg:null;
+  let verdict='';
+  if(dKg!=null && span>=14){
+    verdict = dKg>0.3 && dCm<=0.5 ? ' <b>That is the bulk working</b> — weight up, waist holding.'
+      : dKg>0.3 && dCm>1.5 ? ' <b>Waist is climbing with the scale</b> — trim the surplus by 200 kcal.'
+      : dKg<=0.3 && dCm<=0.5 ? ' Neither moving much — this is maintenance, not a bulk.'
+      : '';
+  }
+  return `<div class="pnote">Waist <b>${dCm>0?'+':''}${dCm.toFixed(1)} cm</b>${
+    dKg!=null?` against <b>${dKg>0?'+':''}${dKg.toFixed(1)} kg</b>`:''} over ${span} days.${verdict}</div>`;
+}
+
+/* What the pyramid actually was, week by week. */
+function pyramidHistory(){
+  const rows=Object.keys(S.pyramidLog||{}).sort().slice(-6).reverse();
+  if(!rows.length) return '';
+  return `<div class="pnote">Recent pyramids: ${rows.map(d=>{
+    const e=S.pyramidLog[d]||{};
+    return `${d.slice(5)} <b>cap ${e.cap}</b>${e.vest?` +${e.vest}kg`:''}`;
+  }).join(' · ')}</div>`;
 }
 
 /* ---------------- views ---------------- */
@@ -713,7 +887,8 @@ function pyramidPanel(){
     : `Add a round if last week's ${cap} moved well. Next week is the same cap with the vest on.`}
     ${climbing?'':(S.vestKg!=null?' Weight set by hand — <b>auto</b> returns it to tracking your bodyweight.'
       :' Suggested weight tracks your bodyweight and cap; adjust it and it sticks.')
-      + ' Use <b>swap</b> if the vest lands on the wrong week.'}</div>`;
+      + ' Use <b>swap</b> if the vest lands on the wrong week.'}</div>
+  ${pyramidHistory()}`;
 }
 
 VIEWS.today = () => {
@@ -757,12 +932,12 @@ VIEWS.today = () => {
       <div class="ptag">${canEdit&&!editingDate?'Today':editingDate?editingDate.slice(5):sched.label+' · preview'} · ${sched.tag}</div></div>
     <div class="pnote">${sched.note}</div>
     ${items.map((it,i)=>`
-      <div class="ex${canEdit&&log.done.includes(i)?' on':''}" data-ex="${i}" role="checkbox"
-           tabindex="0" aria-checked="${canEdit&&log.done.includes(i)}">
+      <div class="ex${canEdit&&log.done.includes(it.k)?' on':''}" data-ex="${it.k}" role="checkbox"
+           tabindex="0" aria-checked="${canEdit&&log.done.includes(it.k)}">
         <div class="box">${CHECK}</div>
         <div class="ex-body"><div class="ex-name">${it.n}</div>
           ${it.p?`<div class="ex-pre">${it.p}</div>`:''}
-          ${it.id?logRow(it.id,canEdit,activeDate):''}</div>
+          ${it.id?logRow(it.id,canEdit,activeDate,it):''}</div>
       </div>`).join('')}
     ${viewing===6?pyramidPanel():''}
     ${sched.restSec&&canEdit?`<div class="wrow"><button id="restStart" data-sec="${sched.restSec}">Start rest timer · ${fmtMMSS(sched.restSec)}</button></div>`:''}
@@ -814,7 +989,10 @@ VIEWS.today = () => {
     ${spark()}
     <div class="wrow"><input type="number" id="wIn" step="0.1" min="40" max="200"
       inputmode="decimal" placeholder="this morning, kg"><button class="primary" id="wSave">Log</button></div>
-    <div class="pnote">Weigh in every morning, same conditions. Judge the weekly average, never a single day.</div>
+    <div class="wrow"><input type="number" id="waistIn" step="0.5" min="50" max="150"
+      inputmode="decimal" placeholder="waist, cm (weekly)"><button id="waistSave">Log</button></div>
+    <div class="pnote">Weigh in every morning, same conditions. Judge the weekly average, never a single day.
+      Waist once a week, relaxed, at the navel — <b>scale up with the waist flat is the bulk working</b>; both climbing together means trim the surplus.</div>
   </section>`;
 };
 
@@ -890,6 +1068,20 @@ VIEWS.progress = () => {
       <div class="verdict ${v.cls}">${v.html}</div></div>
     ${weightChart()}
     <div class="pnote">Since you started: <b>${gain>0?'+':''}${gain.toFixed(1)} kg</b>. Target for a lean bulk is +0.5–0.75 kg per month.</div>
+    ${waistNote()}
+    ${w.length?`<details><summary>Edit weigh-ins</summary>
+      <div class="pnote">One mistyped morning sits inside the 28-day window the gain rate is measured over, and drags the calorie advice with it.</div>
+      <div class="wlist">${[...w].reverse().slice(0,14).map(x=>
+        `<div class="wrow-item"><span>${x.d}</span><b>${x.kg} kg</b>
+          <button class="wdel" data-delw="${x.d}" aria-label="Delete weigh-in for ${x.d}">&#215;</button></div>`
+      ).join('')}</div>
+    </details>`:''}
+  </section>
+
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Recovery</div><div class="ptag">Last 30 days</div></div>
+    ${recoveryChart()}
+    <div class="pnote">Recorded automatically whenever the app is open and WHOOP has scored the day. Red bars clustering around your heaviest weeks is the signal worth acting on.</div>
   </section>
 
   <section class="panel">
@@ -1009,7 +1201,19 @@ function wireToday(){
     viewing=+b.dataset.d; editingDate=null; render();
   });
   document.querySelectorAll('[data-ex]').forEach(el=>bind(el,()=>{
-    if(!canEdit) return; toggle(log.done,+el.dataset.ex); save(); render();
+    if(!canEdit) return;
+    const k=el.dataset.ex;
+    toggle(log.done,k);
+    // Ticking the pyramid is the only moment we know what it actually was:
+    // the cap and vest are live settings that will have moved on by the time
+    // anyone looks back. Record them against the date, drop it on untick.
+    if(k==='sa-pyramid'){
+      if(log.done.includes(k)){
+        const v=vestKg();
+        S.pyramidLog[activeDate]={cap:S.pyramidCap, vest:isVestWeek()&&v!=null?v:0};
+      } else delete S.pyramidLog[activeDate];
+    }
+    save(); render();
   }));
   document.querySelectorAll('[data-mob]').forEach(el=>bind(el,()=>{
     if(!canEdit) return; toggle(log.mob,+el.dataset.mob); save(); render();
@@ -1101,7 +1305,7 @@ function wireToday(){
     // Explicit tap rather than auto-ticking on detection: WHOOP knows you
     // trained, it doesn't know which items on the checklist you actually did.
     const l=dayLog(todayISO);
-    l.done=itemsFor(todayDow).map((_,i)=>i);
+    l.done=itemsFor(todayDow).map(it=>it.k);
     save(); render(); toast('Session marked complete.');
   };
 
@@ -1114,6 +1318,27 @@ function wireToday(){
     save(); render(); toast('Weight logged.');
   };
   wI.onkeydown=e=>{if(e.key==='Enter') wS.click()};
+
+  const waS=document.getElementById('waistSave'), waI=document.getElementById('waistIn');
+  if(waS&&waI){
+    waS.onclick=()=>{
+      const cm=parseFloat(waI.value);
+      if(!cm||cm<50||cm>150){ waI.value=''; waI.placeholder='enter waist in cm'; waI.focus(); return; }
+      S.waist=(S.waist||[]).filter(x=>x.d!==todayISO);
+      S.waist.push({d:todayISO,cm:Math.round(cm*2)/2});
+      save(); render(); toast('Waist logged.');
+    };
+    waI.onkeydown=e=>{if(e.key==='Enter') waS.click()};
+  }
+}
+
+function wireProgress(){
+  document.querySelectorAll('[data-delw]').forEach(b=>b.onclick=()=>{
+    const d=b.dataset.delw;
+    if(!confirm(`Delete the weigh-in for ${d}?`)) return;
+    S.weights=S.weights.filter(x=>x.d!==d);
+    save(); render(); toast('Weigh-in deleted.');
+  });
 }
 
 function wireSetup(){
@@ -1375,6 +1600,7 @@ function render(){
 
   if(name==='today') wireToday();
   if(name==='setup') wireSetup();
+  if(name==='progress') wireProgress();
   if(changedView) window.scrollTo({top:0,behavior:'instant'});
 }
 
@@ -1382,9 +1608,12 @@ window.addEventListener('hashchange',render);
 // The rest timer widget lives outside #view and survives route changes, so
 // its controls are wired once here rather than inside wireToday().
 document.getElementById('rtStop').onclick=stopRestTimer;
+resumeRestTimer();
 document.getElementById('rtAdd').onclick=()=>{
   if(!restTimer.total) return;
-  restTimer.total+=30; restTimer.remaining+=30; renderRestTimer();
+  // Push the finish line out rather than incrementing a counter, and
+  // restart ticking if it had already run down.
+  startRestTimer(restTimer.total+30, Math.max(restTimer.endsAt, Date.now())+30000);
 };
 load();
 render();
@@ -1475,6 +1704,9 @@ document.addEventListener('visibilitychange', ()=>{
     // than whenever the browser gets around to it.
     if(swRegistration) swRegistration.update().catch(()=>{});
     readCacheVersion();
+    // The interval may not have fired at all while the tab was frozen, so
+    // recompute from the clock rather than trusting whatever it last drew.
+    tickRest();
   }
 });
 /* Catches the case where the app is left open and visible straight through
