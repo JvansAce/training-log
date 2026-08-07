@@ -1278,6 +1278,20 @@ const MIND_ADDIN_WEEK = 18;
 const M = () => S.mind || (S.mind = MIND_DEFAULTS());
 const mindWeeks = () => M().startDate
   ? Math.max(0, Math.floor((new Date(todayISO) - new Date(M().startDate))/6048e5)) : 0;
+const EMPTY_MIND_LOG = Object.freeze({done:[], mins:{}, journal:''});
+/* Read-only view for render paths. mindLog() creates the entry as a side
+   effect, which is what you want in a click handler and exactly what you
+   do not want in a template — merely opening Mind on a day you log nothing
+   was writing an empty {done:[],mins:{},journal:''} that the next save then
+   persisted and synced. Frozen so a caller cannot mutate it by accident and
+   silently lose the write. */
+function mindLogRO(d = todayISO){
+  const l = (M().logs||{})[d];
+  if(!l) return EMPTY_MIND_LOG;
+  return {done: Array.isArray(l.done)?l.done:[],
+          mins: (l.mins && typeof l.mins==='object')?l.mins:{},
+          journal: typeof l.journal==='string'?l.journal:''};
+}
 function mindLog(d = todayISO){
   const m = M();
   if(!m.logs[d]) m.logs[d] = {done:[], mins:{}, journal:''};
@@ -1693,7 +1707,7 @@ VIEWS.progress = () => {
 const MIND_VIEWS = {};
 
 function practiceRow(p){
-  const l = mindLog(), done = didPractice(p, todayISO);
+  const l = mindLogRO(), done = didPractice(p, todayISO);
   const target = mindTarget(p);
   const mins = (l.mins||{})[p.k];
   let sub = '', extra = '';
@@ -1740,7 +1754,7 @@ function practiceRow(p){
 function ladderPanel(){
   const cap = M().ladderCap||1;
   const rungs = ladderRungs(cap);
-  const l = mindLog();
+  const l = mindLogRO();
   const doneCount = rungs.filter((_,i)=>(l.done||[]).includes(`rung${i+1}`)).length;
   const atTop = cap >= LADDER.length;
   return `
@@ -1785,7 +1799,7 @@ function charismaPanel(){
     </div>
     <div class="pnote">${escapeHtml(d.src)}</div>
     <div class="pnote">${used >= CHARISMA_USES
-      ? `<b>Done with this one.</b> The next drill arrives on your next tick.`
+      ? `<b>Done with this one.</b> The next drill is waiting next time you open the app.`
       : `${CHARISMA_USES - used} more day${CHARISMA_USES-used===1?'':'s'} using it and the next drill arrives.
          Tick it on the Today list when you actually used it — not when you meant to.`}</div>
     <details>
@@ -2222,7 +2236,10 @@ function wireMind(){
     // a session that never happened.
     if(p && p.kind === 'mins'){
       const cur = (l.mins||{})[p.k], target = mindTarget(p);
-      l.mins[p.k] = cur >= target ? 0 : target;
+      // Delete rather than write 0. A stored zero is a claim that you sat
+      // down for no minutes, it renders as "0" in the field, and it
+      // disagreed with what clearing the field by hand does.
+      if(cur >= target) delete l.mins[p.k]; else l.mins[p.k] = target;
       save(); render();
       return;
     }
@@ -2230,10 +2247,15 @@ function wireMind(){
     // The charisma tick is logged under whichever drill is current, so the
     // history records the technique and not just the fact of a tick.
     if(p && p.kind === 'drill'){
+      // Advancing here made the fourth tick un-undoable: the row still
+      // read as ticked (a drill WAS done today) but the current key had
+      // already moved on, so tapping again pushed the new drill's key and
+      // silently credited it with a use. The drill now only ever advances
+      // at load, which keeps the index stable for the whole day and makes
+      // tick and untick exact inverses.
       const key = charismaKey();
       const at = l.done.indexOf(key);
       if(at > -1) l.done.splice(at,1); else l.done.push(key);
-      if(bumpCharisma()) toast(`Next drill: ${charismaDrill().n}.`);
       save(); render();
       return;
     }
@@ -2242,6 +2264,26 @@ function wireMind(){
     if(k.startsWith('rung')) recordLadder();
     save(); render();
   }));
+
+  /* The row is a checkbox, and the inputs live inside it. Without this the
+     click and keydown handlers above fire for anything you do to a child:
+     tapping the minutes field logged a full session you had not done,
+     pressing Timer marked the sit complete before it started, and — worst —
+     the row's `if(key===' ') preventDefault()` swallowed every space and
+     newline typed into the journal, so the flagship practice of this whole
+     mode produced "avoidedthedentistcall". The body side has had exactly
+     this guard on .logrow since sets were added; Mind was missing it. */
+  document.querySelectorAll('[data-mind-mins]').forEach(row=>{
+    row.onclick=e=>e.stopPropagation();
+    // Enter commits and closes the keypad, matching the set inputs.
+    row.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter') e.target.blur(); };
+  });
+  const jrow = document.getElementById('mindJournal')?.closest('.logrow');
+  if(jrow){
+    jrow.onclick=e=>e.stopPropagation();
+    // No Enter handling here: a journal entry wants paragraphs.
+    jrow.onkeydown=e=>e.stopPropagation();
+  }
 
   const dr = document.querySelector('[data-drill]');
   if(dr) dr.onclick=()=>{
@@ -2270,6 +2312,10 @@ function wireMind(){
   document.querySelectorAll('[data-ladder]').forEach(b=>b.onclick=()=>{
     const m = M();
     m.ladderCap = Math.max(1, Math.min(LADDER.length, (m.ladderCap||1) + +b.dataset.ladder));
+    // Raising the cap means the week is no longer cleared; lowering it past
+    // what you already did means it now is. Either way the record has to be
+    // recomputed, and only the tick handler was doing that.
+    recordLadder();
     save(); render();
   });
 
