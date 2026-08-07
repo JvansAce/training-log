@@ -146,6 +146,32 @@ describe('mergeState — settings follow the newer record', () => {
     const newer = { updatedAt: 2000, weights: [], logs: {}, lifts: {} }; // no startDate at all
     assert.equal(mergeState(older, newer).startDate, '2026-01-01');
   });
+
+  /* Set-once scalars are the trap in this function. The `...newer` spread
+     appears to carry them, so a new one looks like it works — right up
+     until the device that has never been told the value happens to win the
+     updatedAt comparison, at which point the spread copies its absence over
+     the top and the value is gone. Every such field needs an explicit
+     `newer.x ?? older.x` line. heightCm got one; birthYear was added later
+     and did not, and that shipped. This is the guard. */
+  for (const field of ['heightCm', 'birthYear']){
+    test(`${field} is not blanked by a device that never knew it`, () => {
+      const knows   = base({ updatedAt: 1000, [field]: 181 });
+      const ignorant = base({ updatedAt: 2000 });               // newer, but has no idea
+      assert.equal(mergeState(knows, ignorant)[field], 181, 'newer-but-ignorant side wiped it');
+      assert.equal(mergeState(ignorant, knows)[field], 181, 'lost when the roles are swapped');
+    });
+
+    test(`${field} still changes when a device actually changes it`, () => {
+      const older = base({ updatedAt: 1000, [field]: 181 });
+      const newer = base({ updatedAt: 2000, [field]: 179 });
+      assert.equal(mergeState(older, newer)[field], 179);
+    });
+
+    test(`${field} is null, not undefined, when neither side has it`, () => {
+      assert.equal(mergeState(base(), base())[field], null);
+    });
+  }
 });
 
 describe('mergeState — recorded WHOOP readings merge additively by date', () => {

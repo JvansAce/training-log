@@ -52,11 +52,13 @@ export function mergeState(stored, incoming){
     startDate : newer.startDate  ?? older.startDate  ?? null,
     pyramidCap: newer.pyramidCap ?? older.pyramidCap ?? 6,
     calAdjust : newer.calAdjust  ?? older.calAdjust  ?? 0,
-    // A scalar that only ever gets set once. The spread above would carry
-    // it anyway, but only from whichever record is "newer" — so a device
+    // Scalars that only ever get set once. The spread above would carry
+    // them anyway, but only from whichever record is "newer" — so a device
     // that has never been told the height would blank it on the first push
-    // it happens to win. ?? across both sides keeps it.
+    // it happens to win. ?? across both sides keeps it. Anything else added
+    // to this class of field belongs on this list too.
     heightCm  : newer.heightCm   ?? older.heightCm   ?? null,
+    birthYear : newer.birthYear  ?? older.birthYear  ?? null,
     weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {}
   };
 

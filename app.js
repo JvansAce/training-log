@@ -101,7 +101,7 @@ let todayDow = new Date().getDay();
 // a session you cannot finish teaches you to ignore the number.
 const DEFAULTS = {startDate:todayISO, weights:[], waist:[], logs:{}, lifts:{}, whoop:{},
   pyramidLog:{}, pyramidCap:4, vestKg:null, vestPhase:0, barKg:20, calAdjust:0,
-  heightCm:null, updatedAt:0};
+  heightCm:null, birthYear:null, updatedAt:0};
 let S = structuredClone(DEFAULTS);
 let viewing = todayDow;
 let editingDate = null;   // set to an ISO date to back-fill a past day instead of today
@@ -205,10 +205,10 @@ function adoptMerged(merged){
 }
 function stripLocal(o){
   const {startDate,weights,waist,logs,lifts,whoop,pyramidLog,
-    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,updatedAt}=o;
+    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,updatedAt}=o;
   return {updatedAt:updatedAt||0,startDate,pyramidCap,
     vestKg:vestKg??null,vestPhase:vestPhase||0,barKg:barKg??20,calAdjust,
-    heightCm:heightCm??null,
+    heightCm:heightCm??null,birthYear:birthYear??null,
     weights,waist:waist||[],logs,lifts,whoop:whoop||{},pyramidLog:pyramidLog||{}};
 }
 document.addEventListener('focusout',()=>{
@@ -246,10 +246,69 @@ function dayLog(d=editingDate||todayISO){
   l.done=l.done||[]; l.mob=l.mob||[]; l.note=l.note||'';
   return l;
 }
-function fuel(dow){
+/* ---------------- fuel ----------------
+   The target used to be two constants, 2900 and 3200, tuned once for one
+   bodyweight. That is fine until the bodyweight changes: maintenance rises
+   with every kilo gained, so a frozen number quietly shrinks into a smaller
+   and smaller surplus until the scale stalls — and the app reads its own
+   arithmetic as a plateau.
+
+   So it is computed now. Mifflin-St Jeor for resting expenditure (the
+   estimate that holds up best against measured RMR in non-obese adults),
+   an activity multiplier for the kind of day it is, and a fixed surplus on
+   top. Deliberately still a starting point rather than an answer: any TDEE
+   formula carries roughly ±10% error, which is larger than the surplus
+   itself. calAdjust is the correction, and it is driven by the measured
+   28-day trend — the scale is the instrument, this is just the first guess.
+
+   Falls back to the old constants when height or age is missing, so an
+   install that predates those fields behaves exactly as it did. */
+const ACT_TRAIN = 1.7;      // Mon tennis, Tue/Wed/Fri/Sat lifting
+const ACT_REST  = 1.5;      // Thu zone 2, Sun nothing
+const SURPLUS   = 200;      // the "slight" in slight surplus
+const PRO_PER_KG = 2.0;     // inside the 1.6–2.2 g/kg range for a lifter in a surplus
+const FAT_PCT = 0.27;       // of total calories, keeping the split it already had
+const LEGACY_CAL = {rest:2900, train:3200};
+
+const ageNow = () => S.birthYear ? new Date(todayISO).getFullYear() - S.birthYear : null;
+/* Mifflin-St Jeor, male. */
+const bmrOf = (kg, cm, age) => 10*kg + 6.25*cm - 5*age + 5;
+
+function fuelBasis(dow){
   const rest = dow===0 || dow===4;
-  const cal=(rest?2900:3200)+(S.calAdjust||0), pro=170, fat=rest?90:95;
-  return {cal,pro,fat,carb:Math.round((cal-pro*4-fat*9)/4),rest};
+  const kg=latestAvg(), cm=S.heightCm, age=ageNow();
+  if(kg==null || !cm || !age) return {rest, computed:false, base:rest?LEGACY_CAL.rest:LEGACY_CAL.train};
+  const bmr=bmrOf(kg, cm, age), mult=rest?ACT_REST:ACT_TRAIN;
+  return {rest, computed:true, kg, cm, age, bmr, mult,
+    tdee:Math.round(bmr*mult), base:Math.round(bmr*mult) + SURPLUS};
+}
+
+function fuel(dow){
+  const b=fuelBasis(dow);
+  const cal=b.base+(S.calAdjust||0);
+  // Protein tracks bodyweight where there is one; the old flat 170 g is
+  // what a legacy install keeps.
+  const pro=b.computed ? Math.round(b.kg*PRO_PER_KG) : 170;
+  const fat=b.computed ? Math.round(cal*FAT_PCT/9) : (b.rest?90:95);
+  return {cal,pro,fat,carb:Math.round((cal-pro*4-fat*9)/4),rest:b.rest,basis:b};
+}
+
+/* Shows the arithmetic. A number this important should not be a number
+   that just appears — the whole reason the old one went unquestioned for
+   so long is that nothing said where it came from. */
+function fuelWorking(b){
+  if(!b.computed) return `<div class="pnote">Using the plan's default targets. Set your
+    <b>height and year of birth</b> in Setup and this is calculated from your bodyweight instead,
+    so it keeps up as you gain.</div>`;
+  return `<details><summary>Where this number comes from</summary>
+    <div class="pnote">Resting burn <b>${Math.round(b.bmr)} kcal</b> (Mifflin-St Jeor from
+      ${b.kg.toFixed(1)} kg, ${b.cm} cm, age ${b.age}) × <b>${b.mult}</b> for
+      ${b.rest?'a rest day':'a training day'} = ${b.tdee} kcal maintenance.
+      Plus <b>${SURPLUS} kcal</b> of surplus${S.calAdjust?`, plus your <b>${S.calAdjust>0?'+':''}${S.calAdjust}</b> adjustment`:''}.</div>
+    <div class="pnote">Every formula for this is roughly ±10% — wider than the surplus itself.
+      Treat it as the opening bid and let the 28-day trend settle the argument: that is what the
+      adjustment buttons are for, and the target moves on its own as your bodyweight does.</div>
+  </details>`;
 }
 const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
 const sortW = () => [...S.weights].sort((a,b)=>a.d<b.d?-1:1);
@@ -874,6 +933,7 @@ const BUILD = {
   whtrLimit: 0.50    // above this the surplus is going the wrong way
 };
 const MIN_HEIGHT = 120, MAX_HEIGHT = 230;
+const MIN_AGE = 14, MAX_AGE = 90;
 
 const heightM = () => S.heightCm ? S.heightCm/100 : null;
 function latestWaist(){
@@ -950,6 +1010,13 @@ function heightRow(){
     inputmode="numeric" placeholder="your height, cm" value="${S.heightCm||''}"
     aria-label="Height in centimetres"><button id="htSave">${S.heightCm?'Update':'Set height'}</button></div>`;
 }
+/* Year rather than age, so it does not silently go stale every birthday. */
+function birthRow(){
+  const yr=new Date(todayISO).getFullYear();
+  return `<div class="wrow"><input type="number" id="byIn" step="1" min="${yr-MAX_AGE}" max="${yr-MIN_AGE}"
+    inputmode="numeric" placeholder="year you were born" value="${S.birthYear||''}"
+    aria-label="Year of birth"><button id="bySave">${S.birthYear?'Update':'Set year'}</button></div>`;
+}
 
 function buildPanel(){
   const t=buildTargets();
@@ -993,16 +1060,21 @@ function buildPanel(){
    it is the input that unlocks the target, so it belongs where the target
    is, and it is configuration, so it belongs in Setup too. */
 function wireHeight(){
-  const b=document.getElementById('htSave'), i=document.getElementById('htIn');
-  if(!b||!i) return;
-  b.onclick=()=>{
-    const cm=parseInt(i.value,10);
-    if(!cm||cm<MIN_HEIGHT||cm>MAX_HEIGHT){
-      i.value=''; i.placeholder=`height in cm (${MIN_HEIGHT}–${MAX_HEIGHT})`; i.focus(); return;
-    }
-    S.heightCm=cm; save(); render(); toast('Height saved.');
+  const bind=(btnId,inId,lo,hi,hint,apply,done)=>{
+    const b=document.getElementById(btnId), i=document.getElementById(inId);
+    if(!b||!i) return;
+    b.onclick=()=>{
+      const n=parseInt(i.value,10);
+      if(!n||n<lo||n>hi){ i.value=''; i.placeholder=hint; i.focus(); return; }
+      apply(n); save(); render(); toast(done);
+    };
+    i.onkeydown=e=>{ if(e.key==='Enter') b.click(); };
   };
-  i.onkeydown=e=>{ if(e.key==='Enter') b.click(); };
+  bind('htSave','htIn',MIN_HEIGHT,MAX_HEIGHT,
+    `height in cm (${MIN_HEIGHT}–${MAX_HEIGHT})`, n=>{S.heightCm=n}, 'Height saved.');
+  const yr=new Date(todayISO).getFullYear();
+  bind('bySave','byIn',yr-MAX_AGE,yr-MIN_AGE,
+    `year of birth (${yr-MAX_AGE}–${yr-MIN_AGE})`, n=>{S.birthYear=n}, 'Year of birth saved.');
 }
 
 /* What the pyramid actually was, week by week. */
@@ -1125,6 +1197,7 @@ VIEWS.today = () => {
       ${MEALS.map(m=>`<div class="meal"><h4>${m.h} <span class="kc">${m.kc}</span></h4><p>${m.p}</p></div>`).join('')}
       <div class="meal"><p style="color:var(--bone)">Magerquark: 500g tub ≈ 60g protein for about €1.</p></div>
     </details>
+    ${fuelWorking(f.basis)}
     <div class="wrow"><button data-cal="-100">– 100 kcal</button><button data-cal="100">+ 100 kcal</button>
       <span class="ptag">adjust ${S.calAdjust>0?'+':''}${S.calAdjust}</span></div>
     ${v.cls==='slow'?`<div class="wrow suggest">
@@ -1327,10 +1400,14 @@ VIEWS.setup = () => {
   </section>
 
   <section class="panel">
-    <div class="phead"><div class="ptitle">Height</div><div class="ptag">${S.heightCm?S.heightCm+' cm':'Not set'}</div></div>
-    <div class="pnote">Drives the target weight band and waist on the Progress page, and nothing else — it is
-      the number that turns a bodyweight into something you can judge. Set it once.</div>
+    <div class="phead"><div class="ptitle">You</div>
+      <div class="ptag">${[S.heightCm&&S.heightCm+' cm', ageNow()&&ageNow()+'y'].filter(Boolean).join(' · ')||'Not set'}</div></div>
+    <div class="pnote">Height turns a bodyweight into something you can judge — it drives the target band and
+      waist on Progress. Both together drive the calorie target, which is then calculated from your current
+      weight rather than fixed, so it keeps up as you gain instead of quietly becoming a smaller surplus.</div>
     ${heightRow()}
+    ${birthRow()}
+    <div class="pnote">Set once. Year of birth rather than age so it doesn't go stale on your birthday.</div>
   </section>
 
   <section class="panel">
