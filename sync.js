@@ -34,11 +34,28 @@ const Sync = (() => {
   }
 
   /* A device with no real history should pull rather than push, so its
-     empty defaults never dilute the stored record. */
-  const isFresh = s =>
-    Object.keys(s.logs || {}).length === 0 &&
-    Object.keys(s.lifts || {}).length === 0 &&
-    (s.weights || []).length <= 1;
+     empty defaults never dilute the stored record.
+
+     "No real history" has to mean no history ANYWHERE. This originally
+     looked only at the body half, which was fine until Mind existed and
+     then became data loss: journal every morning for a fortnight without
+     logging a single lift and the device still read as fresh, so it never
+     PUT anything, and every pull replaced the local record with the
+     server's copy — which had never received the entries in the first
+     place. Two weeks of writing gone, silently, on a device that had been
+     showing them the whole time. */
+  const isFresh = s => {
+    const m = s.mind || {};
+    const mindUsed = !!m.startDate
+      || Object.keys(m.logs || {}).length > 0
+      || Object.keys(m.ladderLog || {}).length > 0
+      || (m.unlocked || 1) > 1
+      || (m.charismaIx || 0) > 0;
+    return !mindUsed &&
+      Object.keys(s.logs || {}).length === 0 &&
+      Object.keys(s.lifts || {}).length === 0 &&
+      (s.weights || []).length <= 1;
+  };
 
   async function call(method, body){
     const res = await fetch(ENDPOINT, {

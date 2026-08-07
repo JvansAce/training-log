@@ -1,7 +1,7 @@
 {
-  "name": "Brand New Body",
+  "name": "Brand New Body & Mind",
   "short_name": "BNB",
-  "description": "Training, fuel and mobility log.",
+  "description": "Training, fuel, mobility and daily practice log.",
   "start_url": "./index.html#/today",
   "scope": "./",
   "display": "standalone",
@@ -9,9 +9,26 @@
   "background_color": "#141824",
   "theme_color": "#141824",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
   ]
 }

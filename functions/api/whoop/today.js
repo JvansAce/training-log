@@ -53,6 +53,7 @@ async function whoopGet(path, token){
 }
 
 export async function onRequestGet({ request, env }){
+  const url = new URL(request.url);
   let email;
   try { email = await identify(request, env); }
   catch (e){ return json({ error: e.message }, e.status || 401); }
@@ -86,7 +87,16 @@ export async function onRequestGet({ request, env }){
   // filter — before today's recovery has scored, that's yesterday's, and
   // without this check it gets displayed as if it were today's, including
   // driving the "recovery is red, take it easy" advice off a stale number.
-  const isToday = ts => !!ts && new Date(ts).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+  //
+  // "Today" has to be the CLIENT's calendar day. This Worker runs in UTC
+  // while the app keys everything on local dates, so for anyone east of
+  // Greenwich the small hours of the morning are still yesterday in UTC —
+  // a real reading would be filtered out as stale and the app would show
+  // nothing. The client sends its own date; UTC is only the fallback for a
+  // caller that doesn't.
+  const asked = url.searchParams.get('d');
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(asked || '') ? asked : new Date().toISOString().slice(0, 10);
+  const isToday = ts => !!ts && new Date(ts).toISOString().slice(0, 10) === today;
   const recoveryToday = recovery && isToday(recovery.created_at) ? recovery : null;
   const cycleToday    = cycle    && isToday(cycle.start    || cycle.created_at) ? cycle    : null;
   const sleepToday    = sleep    && isToday(sleep.start    || sleep.created_at) ? sleep    : null;

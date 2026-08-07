@@ -13,7 +13,11 @@ const Whoop = (() => {
   async function today(force = false){
     if (!force && cache && Date.now() - fetchedAt < STALE_MS) return cache;
     try{
-      const res = await fetch('/api/whoop/today', { cache: 'no-store' });
+      // Send our local calendar day. The Worker runs in UTC, and filtering
+      // "is this reading from today" against UTC drops a genuine early
+      // morning reading for anyone east of Greenwich.
+      const d = new Date().toLocaleDateString('en-CA');
+      const res = await fetch(`/api/whoop/today?d=${d}`, { cache: 'no-store' });
       const type = res.headers.get('content-type') || '';
       // Non-JSON here usually means an Access login page, not real data —
       // treat it the same as "couldn't reach it" rather than parsing HTML.

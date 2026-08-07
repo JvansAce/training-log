@@ -149,27 +149,34 @@ function migrateDoneKeys(){
   if(changed){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){} }
 }
 
+/* Every path that replaces S wholesale has to run this: loading from disk,
+   importing a backup, adopting a merge. Object.assign is shallow, so a
+   record written before a field existed — or a hand-edited backup — can
+   arrive with a container missing or the wrong type, and the next write to
+   it throws somewhere far from the cause. This used to live inline in
+   load(), which meant importing a backup with a half-shaped `mind` block
+   left the app one tap away from a crash. */
+function normalise(o){
+  const s = Object.assign(structuredClone(DEFAULTS), o || {});
+  if(!Array.isArray(s.weights)) s.weights = [];
+  if(!Array.isArray(s.waist)) s.waist = [];
+  for(const k of ['pyramidLog','logs','lifts','whoop'])
+    if(!s[k] || typeof s[k] !== 'object') s[k] = {};
+  s.mind = Object.assign(MIND_DEFAULTS(), (s.mind && typeof s.mind==='object') ? s.mind : {});
+  for(const k of ['logs','targets','ladderLog'])
+    if(!s.mind[k] || typeof s.mind[k] !== 'object') s.mind[k] = {};
+  return s;
+}
+
 function load(){
   try{
     const raw = localStorage.getItem(STORE_KEY);
     if(raw){
-      S = Object.assign(structuredClone(DEFAULTS), JSON.parse(raw));
       // A parsed-but-wrong-shaped field (e.g. {"weights":null} from a
-      // half-written save) would otherwise throw on the line below, outside
-      // this try — and since that runs before the first render(), the app
-      // never draws anything again until someone clears storage by hand.
-      if(!Array.isArray(S.weights)) S.weights = [];
-      if(!Array.isArray(S.waist)) S.waist = [];
-      if(!S.pyramidLog || typeof S.pyramidLog !== 'object') S.pyramidLog = {};
-      if(!S.logs || typeof S.logs !== 'object') S.logs = {};
-      if(!S.lifts || typeof S.lifts !== 'object') S.lifts = {};
-      if(!S.whoop || typeof S.whoop !== 'object') S.whoop = {};
-      // Object.assign is shallow, so a record written before Mind existed
-      // carries no `mind` key and one written by an older-but-post-Mind
-      // build could be missing a sub-field added since. Fill both cases.
-      S.mind = Object.assign(MIND_DEFAULTS(), (S.mind && typeof S.mind==='object') ? S.mind : {});
-      for(const k of ['logs','targets','ladderLog'])
-        if(!S.mind[k] || typeof S.mind[k] !== 'object') S.mind[k] = {};
+      // half-written save) would otherwise throw later, outside this try —
+      // and since that runs before the first render(), the app never draws
+      // anything again until someone clears storage by hand.
+      S = normalise(JSON.parse(raw));
       migrateDoneKeys();
     }
   }catch(e){
@@ -211,7 +218,7 @@ function adoptMerged(merged){
   if(stableStringify(merged)===stableStringify(stripLocal(S))){ updateFoot(); return; }
   const busy = document.activeElement && document.activeElement.tagName==='INPUT';
   if(busy){ deferredMerge = merged; updateFoot(); return; }
-  S = Object.assign(structuredClone(DEFAULTS), merged);
+  S = normalise(merged);
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){}
   render();
 }
@@ -1199,6 +1206,7 @@ const CHARISMA = [
    src:'"Expressions of moral conviction" — the tactic people avoid, and the one that separates being liked from being followed.'}
 ];
 const CHARISMA_USES = 4;   // uses of a drill before the next one arrives
+const JOURNAL_MAX = 4000;  // characters per entry; see the textarea comment
 
 /* Rotates so it never becomes one rote move, and escalates across the
    week towards Saturday. */
@@ -1731,7 +1739,11 @@ function practiceRow(p){
     extra += `</div>`;
   } else if(p.kind === 'text'){
     sub = promptFor();
-    extra = `<div class="logrow"><textarea id="mindJournal" rows="3"
+    // Capped because /api/state rejects the whole record over 2 MB with a
+    // 413 — one pasted essay would wedge sync on every device, and the
+    // failure would show up as "offline" rather than as anything to do
+    // with what was typed.
+    extra = `<div class="logrow"><textarea id="mindJournal" rows="3" maxlength="${JOURNAL_MAX}"
       placeholder="Write it here — a few lines is plenty.">${escapeHtml(l.journal||'')}</textarea></div>`;
   } else if(p.kind === 'drill'){
     const d = charismaDrill();
@@ -1790,8 +1802,9 @@ function charismaPanel(){
     <div class="phead"><div class="ptitle">Charisma</div>
       <div class="ptag">Drill ${ix % CHARISMA.length + 1} of ${CHARISMA.length}${lap>1?` · lap ${lap}`:''}</div></div>
     <div class="pnote">It is trainable — that is a finding, not a slogan. Randomised trials taught people
-      a fixed set of tactics and had observers rate them; the trained group's charisma ratings went up
-      around 60%. The catch is that trying to remember twelve techniques mid-conversation leaves you
+      a fixed set of tactics and had observers rate them; the trained group's ratings for charisma and
+      leadership went up around 60%. Most of the drills below come from that list; a few are here because
+      they are the cheapest thing to fix in a conversation. The catch is that trying to remember twelve techniques mid-conversation leaves you
       present for none of them. So: one at a time.</div>
     <div class="hist">
       <div class="hist-n"><b>${d.n}</b><div class="ex-pre">${escapeHtml(d.how)}</div></div>
@@ -2307,7 +2320,8 @@ function wireMind(){
   });
 
   const j = document.getElementById('mindJournal');
-  if(j) j.onchange=()=>{ mindLog().journal = j.value; save(); toast('Saved.'); };
+  // maxlength does not apply to a paste on every engine, so clamp here too.
+  if(j) j.onchange=()=>{ mindLog().journal = j.value.slice(0, JOURNAL_MAX); save(); toast('Saved.'); };
 
   document.querySelectorAll('[data-ladder]').forEach(b=>b.onclick=()=>{
     const m = M();
@@ -2445,7 +2459,7 @@ function wireSetup(){
     if(!confirm('Replace this device\'s log with the server copy?')) return;
     const res=await fetch('/api/state',{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
     if(res&&res.state){
-      S=Object.assign(structuredClone(DEFAULTS),res.state);
+      S=normalise(res.state);
       try{ localStorage.setItem(STORE_KEY,JSON.stringify(S)); }catch(e){}
       render(); toast('Pulled from server.');
     } else toast('Nothing to pull.');
@@ -2496,7 +2510,7 @@ function wireSetup(){
     try{
       const data=JSON.parse(await file.text());
       if(!data||typeof data!=='object'||!('weights' in data)) throw 0;
-      S=Object.assign(structuredClone(DEFAULTS),data);
+      S=normalise(data);
       save(); render(); toast('Backup imported.');
     }catch(e){ toast('That file is not a valid backup.'); }
     imp.value='';
@@ -2577,7 +2591,11 @@ async function readCacheVersion(){
 function updateFoot(){
   const el=document.getElementById('foot');
   if(!el) return;
-  el.textContent = `WEEK ${weeksIn()+1} · ${S.weights.length} WEIGH-INS · ${Sync.label()}`
+  const mid = mode==='mind'
+    ? `${activePractices().length} OF ${PRACTICES.length} PRACTICES`
+    : `${S.weights.length} WEIGH-IN${S.weights.length===1?'':'S'}`;
+  const wk = mode==='mind' ? (M().startDate ? mindWeeks()+1 : 0) : weeksIn()+1;
+  el.textContent = `${wk ? `WEEK ${wk} · ` : ''}${mid} · ${Sync.label()}`
     + (cacheVersion ? ` · ${cacheVersion.toUpperCase()}` : '');
 }
 
