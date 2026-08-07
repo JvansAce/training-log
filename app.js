@@ -869,7 +869,7 @@ function waistNote(){
 const BUILD = {
   ffmiLo: 20,        // athletic and visibly trained
   ffmiHi: 22,        // the top of what this programme is aiming at
-  bodyFat: 0.11,     // where a lean bulk sits between cycles
+  bodyFat: 0.11,     // where a slow surplus keeps you without ever needing a deficit
   whtr: 0.45,        // waist ÷ height for the look
   whtrLimit: 0.50    // above this the surplus is going the wrong way
 };
@@ -928,8 +928,21 @@ function buildRead(){
 
   return {cls:'ok', html:
     `Weight is in the band. ${cm!=null
-      ? `What's left is <b>${(cm-t.waist).toFixed(1)} cm</b> of waist — that's a cut, not more food.`
+      ? `What's left is <b>${(cm-t.waist).toFixed(1)} cm</b> of waist — drop the surplus and sit at
+         maintenance while the lifts keep climbing. That is the brake, not a diet.`
       : 'Log a waist measurement and this can tell you whether the mass is landing in the right place.'}`};
+}
+
+/* How long the band actually is away, at the rate being gained right now.
+   The app already has the gap and the trend, so it can say months instead
+   of gesturing at "this takes a while". */
+function bandEta(t){
+  const kg=latestAvg(), tr=trend();
+  if(kg==null || !tr || kg>=t.kgLo) return '';
+  if(tr.rate<=0.05) return ' At the moment the scale is flat, so the band is not getting any closer.';
+  const months=(t.kgLo-kg)/tr.rate;
+  return ` At your current ${tr.rate.toFixed(2)} kg/month that's about ${
+    months<1.5 ? 'a month' : `${Math.round(months)} months`} away.`;
 }
 
 function heightRow(){
@@ -964,8 +977,11 @@ function buildPanel(){
     ${read?`<div class="verdict ${read.cls}" style="margin-top:14px">${read.html}</div>`:''}
     <div class="pnote">Lean and athletic rather than big: enough mass to have shape, and a waist small enough
       that you can see it. The band is FFMI ${BUILD.ffmiLo}–${BUILD.ffmiHi} at around ${Math.round(BUILD.bodyFat*100)}% body fat;
-      the waist target is ${BUILD.whtr}× your height, with ${t.waistLimit} cm the line you don't want to cross.
-      Getting there is two or three bulk-and-trim cycles, not one.</div>
+      the waist target is ${BUILD.whtr}× your height, with ${t.waistLimit} cm the line you don't want to cross.${bandEta(t)}</div>
+    <div class="pnote"><b>No bulk-and-cut cycling.</b> The surplus is small enough that you never need a deficit
+      to undo it — at +0.5–0.75 kg a month most of what you add is lean, so there is nothing to strip off later.
+      The waist is the brake: if it climbs, sit at maintenance for a few weeks and then start the surplus again.
+      Cutting phases exist because people gain 1–2 kg a month and have to. You are not doing that.</div>
     <details>
       <summary>Change height</summary>
       ${heightRow()}
