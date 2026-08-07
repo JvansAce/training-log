@@ -100,7 +100,8 @@ let todayDow = new Date().getDay();
 // pyramidCap starts at 4 (150 reps), not 6 (315). A fresh install opening on
 // a session you cannot finish teaches you to ignore the number.
 const DEFAULTS = {startDate:todayISO, weights:[], waist:[], logs:{}, lifts:{}, whoop:{},
-  pyramidLog:{}, pyramidCap:4, vestKg:null, vestPhase:0, barKg:20, calAdjust:0, updatedAt:0};
+  pyramidLog:{}, pyramidCap:4, vestKg:null, vestPhase:0, barKg:20, calAdjust:0,
+  heightCm:null, updatedAt:0};
 let S = structuredClone(DEFAULTS);
 let viewing = todayDow;
 let editingDate = null;   // set to an ISO date to back-fill a past day instead of today
@@ -204,9 +205,10 @@ function adoptMerged(merged){
 }
 function stripLocal(o){
   const {startDate,weights,waist,logs,lifts,whoop,pyramidLog,
-    pyramidCap,vestKg,vestPhase,barKg,calAdjust,updatedAt}=o;
+    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,updatedAt}=o;
   return {updatedAt:updatedAt||0,startDate,pyramidCap,
     vestKg:vestKg??null,vestPhase:vestPhase||0,barKg:barKg??20,calAdjust,
+    heightCm:heightCm??null,
     weights,waist:waist||[],logs,lifts,whoop:whoop||{},pyramidLog:pyramidLog||{}};
 }
 document.addEventListener('focusout',()=>{
@@ -844,6 +846,149 @@ function waistNote(){
     dKg!=null?` against <b>${dKg>0?'+':''}${dKg.toFixed(1)} kg</b>`:''} over ${span} days.${verdict}</div>`;
 }
 
+/* ---------------- the build ----------------
+   What "ideal weight" actually means here. A weight on its own means
+   nothing — 78 kg is lean on one frame and soft on another — so the target
+   is defined by two ratios against height, and the scale number falls out
+   of them.
+
+   FFMI is lean mass in kg over height in metres squared. Roughly: 20 is
+   trained and athletic, 22 is several serious years, 25 is about the
+   natural ceiling (Kouri 1995, comparing steroid-free and steroid-using
+   lifters — a heuristic, not a law). The build this programme is after is
+   lean and defined rather than big, so the band tops out at 22. Chasing
+   past it means carrying mass that costs you on a tennis court.
+
+   The waist target does the harder work. Waist-to-height ratio is the
+   body-composition measure with the best evidence behind it: under 0.50 is
+   the health threshold, and 0.45 is where the lean athletic look sits.
+   Deliberately no body-fat percentage anywhere — estimating one from a
+   tape measure adds a number that looks precise, reads several points off
+   whatever you'd guess in a mirror, and changes no decision that the waist
+   ratio hasn't already made. */
+const BUILD = {
+  ffmiLo: 20,        // athletic and visibly trained
+  ffmiHi: 22,        // the top of what this programme is aiming at
+  bodyFat: 0.11,     // where a lean bulk sits between cycles
+  whtr: 0.45,        // waist ÷ height for the look
+  whtrLimit: 0.50    // above this the surplus is going the wrong way
+};
+const MIN_HEIGHT = 120, MAX_HEIGHT = 230;
+
+const heightM = () => S.heightCm ? S.heightCm/100 : null;
+function latestWaist(){
+  const q=[...(S.waist||[])].sort((a,b)=>a.d<b.d?-1:1);
+  return q.length ? q.at(-1) : null;
+}
+
+/* Rounded once, here, rather than at each point of display. Keeping the
+   raw values and rounding in the template meant the tile could read
+   "73–80" while the sentence under it said "2.8 kg to the bottom of the
+   band" off 70 kg — arithmetic that doesn't add up in front of the
+   reader. Whole kg and whole cm are the resolution anyone acts on. */
+function buildTargets(){
+  const h=heightM();
+  if(!h) return null;
+  const atFfmi = f => Math.round(f*h*h/(1-BUILD.bodyFat));
+  return {
+    kgLo: atFfmi(BUILD.ffmiLo),
+    kgHi: atFfmi(BUILD.ffmiHi),
+    waist: Math.round(BUILD.whtr*S.heightCm),
+    waistLimit: Math.round(BUILD.whtrLimit*S.heightCm)
+  };
+}
+
+/* The one sentence worth reading: bulk, hold, or deal with the waist.
+   Ordered so the waist can veto — mass added on top of a waist already
+   past the limit is not the build, whatever the scale says. */
+function buildRead(){
+  const t=buildTargets();
+  if(!t) return null;
+  const kg=latestAvg(), wa=latestWaist();
+  const cm=wa?wa.cm:null;
+  const under = kg!=null && kg < t.kgLo;
+  const over  = kg!=null && kg > t.kgHi;
+
+  if(cm!=null && cm > t.waistLimit) return {cls:'fast', html:
+    `Waist first. At <b>${cm} cm</b> you're past the ${t.waistLimit} cm line for your height —
+     more weight on top of that reads as bigger, not leaner. Hold calories steady until it's back under
+     <b>${t.waist} cm</b>.`};
+
+  if(under) return {cls:'slow', html:
+    `<b>${(t.kgLo-kg).toFixed(1)} kg</b> to the bottom of the band. Keep the surplus running${
+      cm!=null ? ` — you have <b>${Math.max(0,t.waistLimit-cm).toFixed(1)} cm</b> of waist room before it becomes the problem` : ''}.`};
+
+  if(over) return {cls:'', html:
+    `Above the band at <b>${kg.toFixed(1)} kg</b>. That's fine if the waist is holding — ${
+      cm!=null && cm<=t.waist ? 'and it is, so this is just more of the build.'
+      : 'but it is the waist that decides, and yours is the number to watch now.'}`};
+
+  if(cm!=null && cm<=t.waist) return {cls:'ok', html:
+    `<b>This is it.</b> ${kg.toFixed(1)} kg at a ${cm} cm waist is the build. Stop chasing the scale and hold it — the work now is keeping it while the lifts keep climbing.`};
+
+  return {cls:'ok', html:
+    `Weight is in the band. ${cm!=null
+      ? `What's left is <b>${(cm-t.waist).toFixed(1)} cm</b> of waist — that's a cut, not more food.`
+      : 'Log a waist measurement and this can tell you whether the mass is landing in the right place.'}`};
+}
+
+function heightRow(){
+  return `<div class="wrow"><input type="number" id="htIn" step="1" min="${MIN_HEIGHT}" max="${MAX_HEIGHT}"
+    inputmode="numeric" placeholder="your height, cm" value="${S.heightCm||''}"
+    aria-label="Height in centimetres"><button id="htSave">${S.heightCm?'Update':'Set height'}</button></div>`;
+}
+
+function buildPanel(){
+  const t=buildTargets();
+  if(!t) return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">The build</div><div class="ptag">Needs your height</div></div>
+    <div class="pnote">A target weight is meaningless without a height — the same 78 kg is lean on one frame
+      and soft on another. Type yours and this works out the weight band and the waist that go with it.</div>
+    ${heightRow()}
+  </section>`;
+
+  const kg=latestAvg(), wa=latestWaist(), read=buildRead();
+  const inBand = kg!=null && kg>=t.kgLo && kg<=t.kgHi;
+  const waistCls = wa==null ? '' : wa.cm<=t.waist ? ' class="up"' : wa.cm>t.waistLimit ? ' class="over"' : '';
+
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">The build</div><div class="ptag">${S.heightCm} cm</div></div>
+    <div class="macros">
+      <div class="macro"><b>${t.kgLo}–${t.kgHi}</b><span>target kg</span></div>
+      <div class="macro"><b>${t.waist}</b><span>target waist</span></div>
+      <div class="macro"><b${inBand?' class="up"':''}>${kg==null?'–':kg.toFixed(1)}</b><span>now kg</span></div>
+      <div class="macro"><b${waistCls}>${wa==null?'–':wa.cm}</b><span>now waist</span></div>
+    </div>
+    ${read?`<div class="verdict ${read.cls}" style="margin-top:14px">${read.html}</div>`:''}
+    <div class="pnote">Lean and athletic rather than big: enough mass to have shape, and a waist small enough
+      that you can see it. The band is FFMI ${BUILD.ffmiLo}–${BUILD.ffmiHi} at around ${Math.round(BUILD.bodyFat*100)}% body fat;
+      the waist target is ${BUILD.whtr}× your height, with ${t.waistLimit} cm the line you don't want to cross.
+      Getting there is two or three bulk-and-trim cycles, not one.</div>
+    <details>
+      <summary>Change height</summary>
+      ${heightRow()}
+    </details>
+  </section>`;
+}
+
+/* Shared because the height field appears on both Progress and Setup —
+   it is the input that unlocks the target, so it belongs where the target
+   is, and it is configuration, so it belongs in Setup too. */
+function wireHeight(){
+  const b=document.getElementById('htSave'), i=document.getElementById('htIn');
+  if(!b||!i) return;
+  b.onclick=()=>{
+    const cm=parseInt(i.value,10);
+    if(!cm||cm<MIN_HEIGHT||cm>MAX_HEIGHT){
+      i.value=''; i.placeholder=`height in cm (${MIN_HEIGHT}–${MAX_HEIGHT})`; i.focus(); return;
+    }
+    S.heightCm=cm; save(); render(); toast('Height saved.');
+  };
+  i.onkeydown=e=>{ if(e.key==='Enter') b.click(); };
+}
+
 /* What the pyramid actually was, week by week. */
 function pyramidHistory(){
   const rows=Object.keys(S.pyramidLog||{}).sort().slice(-6).reverse();
@@ -1078,6 +1223,8 @@ VIEWS.progress = () => {
     </details>`:''}
   </section>
 
+  ${buildPanel()}
+
   <section class="panel">
     <div class="phead"><div class="ptitle">Recovery</div><div class="ptag">Last 30 days</div></div>
     ${recoveryChart()}
@@ -1161,6 +1308,13 @@ VIEWS.setup = () => {
     <div class="pnote">JSON is the one to keep for restoring. CSV is for poking at the numbers in a spreadsheet — it can't be imported back.</div>
     <div class="wrow"><button id="csvW">Weigh-ins CSV</button>
       <button id="csvL">Lifts CSV</button></div>
+  </section>
+
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Height</div><div class="ptag">${S.heightCm?S.heightCm+' cm':'Not set'}</div></div>
+    <div class="pnote">Drives the target weight band and waist on the Progress page, and nothing else — it is
+      the number that turns a bodyweight into something you can judge. Set it once.</div>
+    ${heightRow()}
   </section>
 
   <section class="panel">
@@ -1333,6 +1487,7 @@ function wireToday(){
 }
 
 function wireProgress(){
+  wireHeight();
   document.querySelectorAll('[data-delw]').forEach(b=>b.onclick=()=>{
     const d=b.dataset.delw;
     if(!confirm(`Delete the weigh-in for ${d}?`)) return;
@@ -1342,6 +1497,7 @@ function wireProgress(){
 }
 
 function wireSetup(){
+  wireHeight();
   const so=document.getElementById('signout');
   if(so) so.onclick=()=>{ location.href='/cdn-cgi/access/logout'; };
   /* The last-resort escape hatch. Getting a stuck service worker unstuck

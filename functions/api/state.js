@@ -52,6 +52,11 @@ export function mergeState(stored, incoming){
     startDate : newer.startDate  ?? older.startDate  ?? null,
     pyramidCap: newer.pyramidCap ?? older.pyramidCap ?? 6,
     calAdjust : newer.calAdjust  ?? older.calAdjust  ?? 0,
+    // A scalar that only ever gets set once. The spread above would carry
+    // it anyway, but only from whichever record is "newer" — so a device
+    // that has never been told the height would blank it on the first push
+    // it happens to win. ?? across both sides keeps it.
+    heightCm  : newer.heightCm   ?? older.heightCm   ?? null,
     weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {}
   };
 
