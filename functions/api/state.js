@@ -120,7 +120,10 @@ export function mergeState(stored, incoming){
     // to this class of field belongs on this list too.
     heightCm  : newer.heightCm   ?? older.heightCm   ?? null,
     birthYear : newer.birthYear  ?? older.birthYear  ?? null,
-    weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {},
+    // Latest snooze wins; a deload week you actually took is a fact, so the
+    // log itself is additive below.
+    deloadSnooze: [a.deloadSnooze, b.deloadSnooze].filter(Boolean).sort().at(-1) ?? null,
+    weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {}, deloadLog: {},
     mind: mergeMind(a.mind, b.mind, newer.mind, older.mind)
   };
 
@@ -171,6 +174,11 @@ export function mergeState(stored, incoming){
   for (const d of pyrDates){
     out.pyramidLog[d] = (b.pyramidLog || {})[d] ?? (a.pyramidLog || {})[d];
   }
+
+  // A deload week you took is a week that happened. Additive, like the
+  // pyramid log — a device that was offline for it must not erase it.
+  for (const d of new Set([...Object.keys(a.deloadLog || {}), ...Object.keys(b.deloadLog || {})]))
+    out.deloadLog[d] = (b.deloadLog || {})[d] ?? (a.deloadLog || {})[d];
 
   // Recorded WHOOP readings, keyed by date. Purely additive across devices:
   // both read the same WHOOP account, so a disagreement on a given day just

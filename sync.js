@@ -54,6 +54,7 @@ const Sync = (() => {
     return !mindUsed &&
       Object.keys(s.logs || {}).length === 0 &&
       Object.keys(s.lifts || {}).length === 0 &&
+      Object.keys(s.deloadLog || {}).length === 0 &&
       (s.weights || []).length <= 1;
   };
 

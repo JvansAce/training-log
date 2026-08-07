@@ -84,6 +84,10 @@ test('isFresh accounts for every top-level container in DEFAULTS', () => {
   const cannotHoldWork = new Set([
     'startDate', 'pyramidCap', 'vestKg', 'vestPhase', 'barKg', 'calAdjust',
     'heightCm', 'birthYear', 'updatedAt', 'whoop', 'waist', 'pyramidLog',
+    // The date a deload suggestion was last dismissed. Pure UI quieting —
+    // losing it costs one redundant prompt, not any record of training.
+    // (deloadLog, the weeks actually taken, IS counted by isFresh.)
+    'deloadSnooze',
     // mind's own sub-fields appear in the same literal; they are covered
     // by the explicit checks inside isFresh.
     'unlocked', 'logs', 'targets', 'ladderLog', 'ladderCap', 'charismaIx', 'charismaSince'

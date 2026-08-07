@@ -18,26 +18,26 @@ const SCHEDULE = {
   2:{label:'TU',color:'#E23B3B',title:'Upper · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'The heavy day. Add weight or a rep whenever you hit the top of the range.',
      items:[{k:'tu-warm',n:'Band pull-aparts + arm circles',p:'warm-up 2×15'},
-            {k:'tu-wpullup',n:'Weighted pull-ups',p:'4 × 5–8 — add weight at 8',id:'wpullup'},
-            {k:'tu-incline',n:'Incline DB press',p:'4 × 8–10',id:'incline'},
-            {k:'tu-row',bar:true,n:'Barbell or DB row',p:'4 × 8–10',id:'row'},
-            {k:'tu-ohp',bar:true,n:'Overhead press',p:'3 × 8–10',id:'ohp'},
-            {k:'tu-dips',n:'Dips',p:'3 × to 2 reps shy of failure',id:'dips'},
+            {k:'tu-wpullup',rir:'1–3',n:'Weighted pull-ups',p:'4 × 5–8 — add weight at 8',id:'wpullup'},
+            {k:'tu-incline',rir:'1–2',n:'Incline DB press',p:'4 × 8–10',id:'incline'},
+            {k:'tu-row',rir:'1–2',bar:true,n:'Barbell or DB row',p:'4 × 8–10',id:'row'},
+            {k:'tu-ohp',rir:'1–2',bar:true,n:'Overhead press',p:'3 × 8–10',id:'ohp'},
+            {k:'tu-dips',rir:'1–2',n:'Dips',p:'3 × 8–12',id:'dips'},
             // Shares the 'lat' id with Friday on purpose: one combined
             // progression history rather than two half-pictures.
-            {k:'tu-lat',n:'Lateral raises',p:'3 × 12–15 — strict, no swing',id:'lat'}]},
+            {k:'tu-lat',rir:'0–2',n:'Lateral raises',p:'3 × 12–15 — strict, no swing',id:'lat'}]},
   3:{label:'WE',color:'#E23B3B',title:'Lower · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'If Monday tennis left you wrecked, swap this with Tuesday.',
      items:[{k:'we-warm',n:'Leg swings · hip circles · 90/90',p:'warm-up 5 min'},
-            {k:'we-squat',bar:true,n:'Squat or trap bar deadlift',p:'4 × 5–8',id:'squat'},
-            {k:'we-rdl',bar:true,n:'Romanian deadlift',p:'3 × 8–10',id:'rdl'},
+            {k:'we-squat',rir:'1–3',bar:true,n:'Squat or trap bar deadlift',p:'4 × 5–8',id:'squat'},
+            {k:'we-rdl',rir:'1–2',bar:true,n:'Romanian deadlift',p:'3 × 8–10',id:'rdl'},
             // The RDL is pure hip extension. The short head of the biceps
             // femoris only crosses the knee, so it barely works in any
             // hinge — this is the movement that actually trains it.
-            {k:'we-legcurl',n:'Leg curl or Nordic',p:'3 × 8–12',id:'legcurl'},
-            {k:'we-bss',n:'Bulgarian split squat',p:'3 × 10 / leg',id:'bss'},
-            {k:'we-calf',n:'Calf raises',p:'3 × 15',id:'calf'},
-            {k:'we-hlr',n:'Hanging leg raises',p:'3 × 12 — add a dumbbell between the feet when 12 is easy',id:'hlr'}]},
+            {k:'we-legcurl',rir:'0–2',n:'Leg curl or Nordic',p:'3 × 8–12',id:'legcurl'},
+            {k:'we-bss',rir:'1–2',n:'Bulgarian split squat',p:'3 × 10 / leg',id:'bss'},
+            {k:'we-calf',rir:'0–2',n:'Calf raises',p:'3 × 15',id:'calf'},
+            {k:'we-hlr',rir:'0–2',n:'Hanging leg raises',p:'3 × 12 — add a dumbbell between the feet when 12 is easy',id:'hlr'}]},
   4:{label:'TH',color:'#D9A13B',title:'Easy Cardio',tag:'Zone 2 only',
      note:'Conversational pace. If WHOOP recovery is red, take the full rest instead — this is the first thing to drop.',
      items:[{k:'th-z2',n:'Zone 2',p:'20–35 min easy jog, bike or brisk hike'},
@@ -45,22 +45,28 @@ const SCHEDULE = {
   5:{label:'FR',color:'#E23B3B',title:'Upper · Volume',tag:'Rest 60–90s',restSec:75,
      note:'Chase the pump here. Side and rear delts are what make the suit fit — and they only get trained if you actually load them.',
      items:[{k:'fr-warm',n:'Band pull-aparts',p:'warm-up 2×15'},
-            {k:'fr-pullup',n:'Pull-ups',p:'4 × max reps',id:'pullup'},
-            {k:'fr-flat',n:'Flat DB press',p:'4 × 10–12',id:'flat'},
-            {k:'fr-crow',n:'Cable or band row',p:'3 × 12',id:'crow'},
-            {k:'fr-lat',n:'Lateral raises',p:'4 × 15',id:'lat'},
+            {k:'fr-pullup',rir:'0',n:'Pull-ups',p:'4 × max reps',id:'pullup'},
+            {k:'fr-flat',rir:'1–2',n:'Flat DB press',p:'4 × 10–12',id:'flat'},
+            {k:'fr-crow',rir:'1–2',n:'Cable or band row',p:'3 × 12',id:'crow'},
+            {k:'fr-lat',rir:'0–1',n:'Lateral raises',p:'4 × 15',id:'lat'},
             // Promoted from a warm-up to real loaded sets — rear delts had
             // no working volume anywhere in the week.
-            {k:'fr-facepull',n:'Face pulls',p:'3 × 15 — load it, pause at the face',id:'facepull'},
-            {k:'fr-arms',n:'Curls + triceps',p:'3 × 12 each',id:'arms'}]},
+            {k:'fr-facepull',rir:'0–2',n:'Face pulls',p:'3 × 15 — load it, pause at the face',id:'facepull'},
+            {k:'fr-arms',rir:'0–1',n:'Curls + triceps',p:'3 × 12 each',id:'arms'}]},
   6:{label:'SA',color:'#E23B3B',title:'Lower + Pyramid',tag:'Treat it as a session',restSec:180,
      note:'The pyramid is a full session element, not an add-on. Alternate the two ways of progressing it: one week add a round, the next keep the same rounds and wear the vest.',
-     items:[{k:'sa-fsquat',bar:true,n:'Front or goblet squat',p:'4 × 8',id:'fsquat'},
-            {k:'sa-boxjump',n:'Box jumps',p:'4 × 6 explosive, full rest',id:'boxjump'},
-            {k:'sa-calf',n:'Calf raises',p:'3 × 12–15 — pause at the top',id:'calf'},
+     items:[{k:'sa-fsquat',rir:'1–2',bar:true,n:'Front or goblet squat',p:'4 × 8',id:'fsquat'},
+            {k:'sa-boxjump',n:'Box jumps',p:'4 × 6 explosive, full rest — stop the set if height drops',id:'boxjump'},
+            // Saturday used to be entirely quad-dominant, which left the
+            // hamstrings and glutes on Wednesday alone — one session a week
+            // against two for the quads, and the lowest direct volume of any
+            // major muscle in the programme. A hip extension here fixes the
+            // frequency and the volume without repeating Wednesday's hinge.
+            {k:'sa-ext',rir:'1–2',n:'45° back extension',p:'3 × 10–12 — hip thrust or Nordic if no bench',id:'ext'},
+            {k:'sa-calf',rir:'0–2',n:'Calf raises',p:'3 × 12–15 — pause at the top',id:'calf'},
             // Loaded flexion, so abs get progressive overload like anything
             // else. The pyramid's sit-ups are endurance work, not growth.
-            {k:'sa-crunch',n:'Cable crunch or weighted sit-up',p:'3 × 10–15 — add load, not reps',id:'crunch'},
+            {k:'sa-crunch',rir:'0–2',n:'Cable crunch or weighted sit-up',p:'3 × 10–15 — add load, not reps',id:'crunch'},
             {k:'sa-pyramid',n:'PYRAMID',p:'',id:'pyramid'}]},
   0:{label:'SU',color:'#868FA6',title:'Full Rest',tag:'Growth happens here',
      note:'Nothing structured. Walk, stretch, eat. Long mobility is the only box worth ticking.',
@@ -101,7 +107,7 @@ let todayDow = new Date().getDay();
 // a session you cannot finish teaches you to ignore the number.
 const DEFAULTS = {startDate:todayISO, weights:[], waist:[], logs:{}, lifts:{}, whoop:{},
   pyramidLog:{}, pyramidCap:4, vestKg:null, vestPhase:0, barKg:20, calAdjust:0,
-  heightCm:null, birthYear:null,
+  heightCm:null, birthYear:null, deloadLog:{}, deloadSnooze:null,
   // Brand New Mind. Kept as one nested object so the body state above is
   // untouched and the two can never collide.
   mind:{startDate:null, unlocked:1, logs:{}, targets:{}, ladderLog:{}, ladderCap:1,
@@ -160,7 +166,7 @@ function normalise(o){
   const s = Object.assign(structuredClone(DEFAULTS), o || {});
   if(!Array.isArray(s.weights)) s.weights = [];
   if(!Array.isArray(s.waist)) s.waist = [];
-  for(const k of ['pyramidLog','logs','lifts','whoop'])
+  for(const k of ['pyramidLog','logs','lifts','whoop','deloadLog'])
     if(!s[k] || typeof s[k] !== 'object') s[k] = {};
   s.mind = Object.assign(MIND_DEFAULTS(), (s.mind && typeof s.mind==='object') ? s.mind : {});
   for(const k of ['logs','targets','ladderLog'])
@@ -224,10 +230,11 @@ function adoptMerged(merged){
 }
 function stripLocal(o){
   const {startDate,weights,waist,logs,lifts,whoop,pyramidLog,
-    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,mind,updatedAt}=o;
+    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,deloadLog,deloadSnooze,mind,updatedAt}=o;
   return {updatedAt:updatedAt||0,startDate,pyramidCap,
     vestKg:vestKg??null,vestPhase:vestPhase||0,barKg:barKg??20,calAdjust,
     heightCm:heightCm??null,birthYear:birthYear??null,
+    deloadLog:deloadLog||{},deloadSnooze:deloadSnooze??null,
     mind:Object.assign(MIND_DEFAULTS(), mind||{}),
     weights,waist:waist||[],logs,lifts,whoop:whoop||{},pyramidLog:pyramidLog||{}};
 }
@@ -1097,6 +1104,84 @@ function wireHeight(){
     `year of birth (${yr-MAX_AGE}–${yr-MIN_AGE})`, n=>{S.birthYear=n}, 'Year of birth saved.');
 }
 
+/* ---------------- deload ----------------
+   The programme is six days a week with one rest day and a pyramid whose
+   volume grows with the square of the cap, and it had no mechanism at all
+   for backing off. The evidence for a FIXED deload every Nth week is
+   genuinely mixed, so this does not impose one — it watches the recovery
+   data already being collected and says something when that data says to.
+
+   WHOOP's own bands are the thresholds: under 34% is red, 67%+ is green.
+   Two independent triggers, because a week can go wrong in two shapes — a
+   grinding low average, or a handful of genuinely bad days inside an
+   otherwise normal week. */
+const DELOAD_WINDOW = 7;
+const DELOAD_MEAN = 50;        // 7-day mean recovery below this
+const DELOAD_REDS = 3;         // or this many red days in the window
+const RECOVERY_RED = 34;
+const DELOAD_MIN_DAYS = 5;     // don't judge a week off two readings
+const DELOAD_COOLDOWN = 28;    // never suggest another inside a month
+const DELOAD_SNOOZE = 5;       // days of quiet after "Not now"
+
+function recoveryDays(n){
+  const out = [];
+  for(let i = 1; i <= n; i++){
+    const dt = new Date(todayISO); dt.setDate(dt.getDate() - i);
+    const v = (S.whoop[iso(dt)] || {}).recovery;
+    if(v != null) out.push({d: iso(dt), v});
+  }
+  return out;
+}
+const lastDeload = () => Object.keys(S.deloadLog || {}).sort().at(-1) || null;
+const daysSince = d => d ? Math.round((new Date(todayISO) - new Date(d)) / 864e5) : Infinity;
+/* A deload is a week, not a day: the logged date is when it started. */
+const inDeloadWeek = () => daysSince(lastDeload()) < 7;
+
+function deloadSignal(){
+  if(inDeloadWeek()) return null;
+  if(daysSince(lastDeload()) < DELOAD_COOLDOWN) return null;
+  // The signal is a rolling window, so without a snooze "Not now" would be
+  // undone by the very next render and the panel would nag on every tap.
+  if(daysSince(S.deloadSnooze) < DELOAD_SNOOZE) return null;
+  const days = recoveryDays(DELOAD_WINDOW);
+  if(days.length < DELOAD_MIN_DAYS) return null;
+  const mean = Math.round(avg(days.map(x => x.v)));
+  const reds = days.filter(x => x.v < RECOVERY_RED).length;
+  if(mean < DELOAD_MEAN) return {mean, reds, n: days.length, why:
+    `Recovery has averaged <b>${mean}%</b> over the last ${days.length} days.`};
+  if(reds >= DELOAD_REDS) return {mean, reds, n: days.length, why:
+    `<b>${reds} red days</b> in the last ${days.length}, at a ${mean}% average.`};
+  return null;
+}
+
+function deloadPanel(){
+  if(inDeloadWeek()){
+    const left = 7 - daysSince(lastDeload());
+    return `
+    <section class="panel">
+      <div class="phead"><div class="ptitle">Deload week</div>
+        <div class="ptag">${left} day${left===1?'':'s'} left</div></div>
+      <div class="pnote"><b>Halve the sets. Keep the weight. Skip the pyramid.</b> Same exercises, same
+        loads, roughly half the work — cutting volume rather than intensity is what keeps the strength
+        while the fatigue clears. Tennis and the Thursday walk are fine.</div>
+      <div class="wrow"><button id="deloadEnd">End it early</button>
+        <span class="ptag">started ${lastDeload()}</span></div>
+    </section>`;
+  }
+  const sig = deloadSignal();
+  if(!sig) return '';
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Take a deload</div><div class="ptag">Recovery is asking</div></div>
+    <div class="verdict fast">${sig.why} That is the signal to back off for a week — not because a
+      calendar says so, but because your own data does.</div>
+    <div class="pnote">A deload here is <b>half the sets at the same weight</b>, and no pyramid. It is one
+      week. The alternative is grinding through it and losing the next three.</div>
+    <div class="wrow"><button class="primary" id="deloadStart">Start a deload week</button>
+      <button id="deloadDismiss">Not now</button></div>
+  </section>`;
+}
+
 /* What the pyramid actually was, week by week. */
 function pyramidHistory(){
   const rows=Object.keys(S.pyramidLog||{}).sort().slice(-6).reverse();
@@ -1526,7 +1611,7 @@ VIEWS.today = () => {
            tabindex="0" aria-checked="${canEdit&&log.done.includes(it.k)}">
         <div class="box">${CHECK}</div>
         <div class="ex-body"><div class="ex-name">${it.n}</div>
-          ${it.p?`<div class="ex-pre">${it.p}</div>`:''}
+          ${it.p?`<div class="ex-pre">${it.p}${it.rir?` <span class="rir">${it.rir} RIR</span>`:''}</div>`:''}
           ${it.id?logRow(it.id,canEdit,activeDate,it):''}</div>
       </div>`).join('')}
     ${viewing===6?pyramidPanel():''}
@@ -1536,6 +1621,8 @@ VIEWS.today = () => {
     </div>`:log.note?`<div class="pnote"><b>Note:</b> ${escapeHtml(log.note)}</div>`:''}
     ${!isToday&&!editingDate?`<div class="wrow"><button id="backtoday">Back to today</button></div>`:''}
   </section>
+
+  ${deloadPanel()}
 
   <section class="panel">
     <div class="phead"><div class="ptitle">Fuel</div><div class="ptag">${f.rest?'Rest day':'Training day'}</div></div>
@@ -2185,6 +2272,23 @@ function wireToday(){
     S.calAdjust=(S.calAdjust||0)+CAL_STEP; save(); render();
     toast(`Target raised by ${CAL_STEP} kcal. Give it two weeks.`);
   };
+  const ds=document.getElementById('deloadStart');
+  if(ds) ds.onclick=()=>{
+    S.deloadLog[todayISO]={mean:(deloadSignal()||{}).mean??null};
+    S.deloadSnooze=null;
+    save(); render(); toast('Deload week logged. Half the sets, same weight.');
+  };
+  const dd=document.getElementById('deloadDismiss');
+  // Snooze rather than dismiss forever: the signal is a rolling window, so
+  // without this it would re-fire on the very next render and nag.
+  if(dd) dd.onclick=()=>{ S.deloadSnooze=todayISO; save(); render(); toast('Left it. It will ask again in a few days.'); };
+  const de=document.getElementById('deloadEnd');
+  if(de) de.onclick=()=>{
+    if(!confirm('End the deload week early?')) return;
+    delete S.deloadLog[lastDeload()];
+    save(); render(); toast('Deload ended.');
+  };
+
   const bt=document.getElementById('backtoday');
   if(bt) bt.onclick=()=>{viewing=todayDow; render()};
   const bfd=document.getElementById('backfillDone');
