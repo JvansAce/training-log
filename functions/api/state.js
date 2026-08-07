@@ -94,6 +94,63 @@ function mergeMind(ma, mb, newerMind, olderMind){
   return out;
 }
 
+/* ---------- tombstones ----------
+   Every dated collection below merges additively, because absence on one
+   side normally means "that device hasn't seen it yet". The cost is that a
+   real deletion is indistinguishable from that, so deletions never stuck:
+   the client removed a weigh-in, pushed, and this function handed it
+   straight back from its own copy.
+
+   A tombstone is the record's key and the moment it was deleted. It kills
+   the record unless a side that still HOLDS the record wrote more recently
+   than the tombstone — which is exactly what re-creating it does, since
+   every client write bumps updatedAt. That keeps delete working without a
+   stale device being able to erase something it simply never received. */
+const TOMB_TTL = 90 * 24 * 3600 * 1000;
+
+function mergeTombs(a, b){
+  const out = {}, cut = Date.now() - TOMB_TTL;
+  for (const src of [a || {}, b || {}])
+    for (const [k, ts] of Object.entries(src))
+      if (typeof ts === 'number' && ts > cut) out[k] = Math.max(out[k] || 0, ts);
+  return out;
+}
+
+/* Which tombstones have been overruled by a later write on a side that
+   still has the record. */
+function resurrected(tombs, a, b){
+  const live = new Set();
+  const consider = (state, key) => {
+    const ts = tombs[key];
+    if (ts != null && (state.updatedAt || 0) > ts) live.add(key);
+  };
+  for (const st of [a, b]){
+    const s = st || {};
+    (s.weights || []).forEach(w => consider(s, `w:${w.d}`));
+    (s.waist   || []).forEach(w => consider(s, `waist:${w.d}`));
+    for (const [id, entries] of Object.entries(s.lifts || {}))
+      (entries || []).forEach(e => consider(s, `lift:${id}:${e.d}`));
+    Object.keys(s.pyramidLog || {}).forEach(d => consider(s, `pyr:${d}`));
+    Object.keys(s.deloadLog  || {}).forEach(d => consider(s, `dl:${d}`));
+    Object.keys((s.mind || {}).ladderLog || {}).forEach(d => consider(s, `mladder:${d}`));
+  }
+  return live;
+}
+
+function applyTombs(out){
+  const t = out.tombs || {};
+  const dead = k => !!t[k];
+  out.weights = out.weights.filter(w => !dead(`w:${w.d}`));
+  out.waist   = out.waist.filter(w => !dead(`waist:${w.d}`));
+  for (const id of Object.keys(out.lifts)){
+    out.lifts[id] = out.lifts[id].filter(e => !dead(`lift:${id}:${e.d}`));
+    if (!out.lifts[id].length) delete out.lifts[id];
+  }
+  for (const d of Object.keys(out.pyramidLog)) if (dead(`pyr:${d}`)) delete out.pyramidLog[d];
+  for (const d of Object.keys(out.deloadLog))  if (dead(`dl:${d}`))  delete out.deloadLog[d];
+  for (const d of Object.keys(out.mind.ladderLog)) if (dead(`mladder:${d}`)) delete out.mind.ladderLog[d];
+}
+
 /* Additive by default so nothing is ever lost, but recent days take the
    latest write so that unticking something on the device in your hand
    actually sticks. */
@@ -124,8 +181,14 @@ export function mergeState(stored, incoming){
     // log itself is additive below.
     deloadSnooze: [a.deloadSnooze, b.deloadSnooze].filter(Boolean).sort().at(-1) ?? null,
     weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {}, deloadLog: {},
+    tombs: {},
     mind: mergeMind(a.mind, b.mind, newer.mind, older.mind)
   };
+
+  out.tombs = mergeTombs(a.tombs, b.tombs);
+  // Drop the tombstones a later write has already overruled, before they
+  // get a chance to delete the thing that write re-created.
+  for (const k of resurrected(out.tombs, a, b)) delete out.tombs[k];
 
   const byDate = (xs = [], ys = []) => {
     const m = new Map();
@@ -195,6 +258,7 @@ export function mergeState(stored, incoming){
       sleep: pick('sleep'), hrv: pick('hrv'), rhr: pick('rhr')
     };
   }
+  applyTombs(out);
   return out;
 }
 

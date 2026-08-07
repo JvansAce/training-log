@@ -107,7 +107,7 @@ let todayDow = new Date().getDay();
 // a session you cannot finish teaches you to ignore the number.
 const DEFAULTS = {startDate:todayISO, weights:[], waist:[], logs:{}, lifts:{}, whoop:{},
   pyramidLog:{}, pyramidCap:4, vestKg:null, vestPhase:0, barKg:20, calAdjust:0,
-  heightCm:null, birthYear:null, deloadLog:{}, deloadSnooze:null,
+  heightCm:null, birthYear:null, deloadLog:{}, deloadSnooze:null, tombs:{},
   // Brand New Mind. Kept as one nested object so the body state above is
   // untouched and the two can never collide.
   mind:{startDate:null, unlocked:1, logs:{}, targets:{}, ladderLog:{}, ladderCap:1,
@@ -166,7 +166,7 @@ function normalise(o){
   const s = Object.assign(structuredClone(DEFAULTS), o || {});
   if(!Array.isArray(s.weights)) s.weights = [];
   if(!Array.isArray(s.waist)) s.waist = [];
-  for(const k of ['pyramidLog','logs','lifts','whoop','deloadLog'])
+  for(const k of ['pyramidLog','logs','lifts','whoop','deloadLog','tombs'])
     if(!s[k] || typeof s[k] !== 'object') s[k] = {};
   s.mind = Object.assign(MIND_DEFAULTS(), (s.mind && typeof s.mind==='object') ? s.mind : {});
   for(const k of ['logs','targets','ladderLog'])
@@ -191,6 +191,42 @@ function load(){
   }
   if(!S.weights.length) S.weights = [{d:todayISO, kg:79}];
 }
+/* ---------------- tombstones ----------------
+   Every dated collection in this app merges additively, because absence on
+   one device usually means "that device has not seen it yet" and treating
+   that as a deletion would lose data. The cost is that a real deletion also
+   reads as absence, so nothing could ever actually be deleted: the server
+   kept its copy and handed it straight back. Confirming "Delete the weigh-in
+   for the 5th?" removed it locally and the next sync put it back, on a
+   single device, within seconds.
+
+   So deletions are recorded rather than inferred. A tombstone is the key
+   plus the moment it was deleted; the merge drops the record unless some
+   side has written it again SINCE that moment, which is what re-creating it
+   does. They expire after 90 days — by then every device has long converged
+   and keeping them would just grow the record forever. */
+const TOMB_TTL_DAYS = 90;
+const tombKey = {
+  weight: d => `w:${d}`,
+  waist : d => `waist:${d}`,
+  lift  : (id, d) => `lift:${id}:${d}`,
+  pyr   : d => `pyr:${d}`,
+  deload: d => `dl:${d}`,
+  ladder: d => `mladder:${d}`
+};
+function tomb(key){ (S.tombs = S.tombs || {})[key] = Date.now(); }
+/* Writing a record again is what un-deletes it — the merge compares the
+   write's timestamp against the tombstone's, so this only has to clear the
+   local copy. */
+function untomb(key){ if(S.tombs) delete S.tombs[key]; }
+function pruneTombs(){
+  const cut = Date.now() - TOMB_TTL_DAYS * 864e5;
+  let changed = false;
+  for(const [k, ts] of Object.entries(S.tombs || {}))
+    if(!(ts > cut)){ delete S.tombs[k]; changed = true; }
+  return changed;
+}
+
 /* Write to disk and queue a push, WITHOUT claiming the record changed.
    Used for data the app derives rather than the person entering it (WHOOP
    readings): bumping updatedAt for those would let an idle phone waking in
@@ -230,11 +266,11 @@ function adoptMerged(merged){
 }
 function stripLocal(o){
   const {startDate,weights,waist,logs,lifts,whoop,pyramidLog,
-    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,deloadLog,deloadSnooze,mind,updatedAt}=o;
+    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,deloadLog,deloadSnooze,tombs,mind,updatedAt}=o;
   return {updatedAt:updatedAt||0,startDate,pyramidCap,
     vestKg:vestKg??null,vestPhase:vestPhase||0,barKg:barKg??20,calAdjust,
     heightCm:heightCm??null,birthYear:birthYear??null,
-    deloadLog:deloadLog||{},deloadSnooze:deloadSnooze??null,
+    deloadLog:deloadLog||{},deloadSnooze:deloadSnooze??null,tombs:tombs||{},
     mind:Object.assign(MIND_DEFAULTS(), mind||{}),
     weights,waist:waist||[],logs,lifts,whoop:whoop||{},pyramidLog:pyramidLog||{}};
 }
@@ -679,6 +715,12 @@ function logStart(){
   if(S.startDate) dates.push(S.startDate);
   return dates.length ? dates.sort()[0] : null;
 }
+/* Did a deload week start inside this calendar week? Used by the streak,
+   which must not punish a week the app itself prescribed. */
+function deloadedWeek(start, end){
+  const a = iso(start), b = iso(end);
+  return Object.keys(S.deloadLog || {}).some(d => d >= a && d <= b);
+}
 function greenStreak(){
   const from=logStart();
   if(!from) return 0;
@@ -690,6 +732,10 @@ function greenStreak(){
     const end=new Date(start); end.setDate(end.getDate()+6);
     // Weeks from before this log existed aren't failures, just absent.
     if(end < new Date(from)) break;
+    // A week you deliberately deloaded is not a week you fell off. The app
+    // asks you to train less and then counted it against the streak it
+    // rewards — telling you off for doing what it just told you to do.
+    if(deloadedWeek(start,end)){ streak++; continue; }
     if(sessionsBetween(start,end) >= GREEN_WEEK) streak++; else break;
   }
   return streak;
@@ -1132,10 +1178,14 @@ function recoveryDays(n){
   }
   return out;
 }
-const lastDeload = () => Object.keys(S.deloadLog || {}).sort().at(-1) || null;
+/* Ignore anything dated in the future — a device with a fast clock, or a
+   record synced from one, would otherwise pin the app into a deload week
+   that counts UP instead of down and never ends. */
+const lastDeload = () =>
+  Object.keys(S.deloadLog || {}).filter(d => d <= todayISO).sort().at(-1) || null;
 const daysSince = d => d ? Math.round((new Date(todayISO) - new Date(d)) / 864e5) : Infinity;
 /* A deload is a week, not a day: the logged date is when it started. */
-const inDeloadWeek = () => daysSince(lastDeload()) < 7;
+const inDeloadWeek = () => { const n = daysSince(lastDeload()); return n >= 0 && n < 7; };
 
 function deloadSignal(){
   if(inDeloadWeek()) return null;
@@ -1155,6 +1205,10 @@ function deloadSignal(){
 }
 
 function deloadPanel(){
+  // Back-filling last Tuesday is not the moment to be asked about this
+  // week — and "Start a deload week" would stamp today regardless, which
+  // reads as a bug even though it is what you would want.
+  if(editingDate) return '';
   if(inDeloadWeek()){
     const left = 7 - daysSince(lastDeload());
     return `
@@ -2199,7 +2253,8 @@ function wireToday(){
       if(log.done.includes(k)){
         const v=vestKg();
         S.pyramidLog[activeDate]={cap:S.pyramidCap, vest:isVestWeek()&&v!=null?v:0};
-      } else delete S.pyramidLog[activeDate];
+        untomb(tombKey.pyr(activeDate));
+      } else { delete S.pyramidLog[activeDate]; tomb(tombKey.pyr(activeDate)); }
     }
     save(); render();
   }));
@@ -2223,7 +2278,9 @@ function wireToday(){
       }
     });
     S.lifts[id]=(S.lifts[id]||[]).filter(x=>x.d!==activeDate);
-    if(sets.length) S.lifts[id].push({d:activeDate, sets});
+    // Clearing every input IS the delete gesture for a lift entry.
+    if(sets.length){ S.lifts[id].push({d:activeDate, sets}); untomb(tombKey.lift(id,activeDate)); }
+    else tomb(tombKey.lift(id,activeDate));
     save();
     const ref=row.querySelector('.logref');
     if(ref) ref.textContent=refText(id,activeDate);
@@ -2275,6 +2332,7 @@ function wireToday(){
   const ds=document.getElementById('deloadStart');
   if(ds) ds.onclick=()=>{
     S.deloadLog[todayISO]={mean:(deloadSignal()||{}).mean??null};
+    untomb(tombKey.deload(todayISO));
     S.deloadSnooze=null;
     save(); render(); toast('Deload week logged. Half the sets, same weight.');
   };
@@ -2285,7 +2343,8 @@ function wireToday(){
   const de=document.getElementById('deloadEnd');
   if(de) de.onclick=()=>{
     if(!confirm('End the deload week early?')) return;
-    delete S.deloadLog[lastDeload()];
+    const d=lastDeload();
+    delete S.deloadLog[d]; tomb(tombKey.deload(d));
     save(); render(); toast('Deload ended.');
   };
 
@@ -2320,6 +2379,7 @@ function wireToday(){
     if(!kg||kg<40||kg>200){ wI.value=''; wI.placeholder='enter a weight in kg'; wI.focus(); return; }
     S.weights=S.weights.filter(x=>x.d!==todayISO);
     S.weights.push({d:todayISO,kg:Math.round(kg*10)/10});
+    untomb(tombKey.weight(todayISO));
     save(); render(); toast('Weight logged.');
   };
   wI.onkeydown=e=>{if(e.key==='Enter') wS.click()};
@@ -2331,6 +2391,7 @@ function wireToday(){
       if(!cm||cm<50||cm>150){ waI.value=''; waI.placeholder='enter waist in cm'; waI.focus(); return; }
       S.waist=(S.waist||[]).filter(x=>x.d!==todayISO);
       S.waist.push({d:todayISO,cm:Math.round(cm*2)/2});
+      untomb(tombKey.waist(todayISO));
       save(); render(); toast('Waist logged.');
     };
     waI.onkeydown=e=>{if(e.key==='Enter') waS.click()};
@@ -2453,8 +2514,8 @@ function recordLadder(){
   const l = mindLog();
   const cleared = ladderRungs(M().ladderCap||1)
     .every((_,i)=>(l.done||[]).includes(`rung${i+1}`));
-  if(cleared) M().ladderLog[todayISO] = {cap: M().ladderCap||1};
-  else delete M().ladderLog[todayISO];
+  if(cleared){ M().ladderLog[todayISO] = {cap: M().ladderCap||1}; untomb(tombKey.ladder(todayISO)); }
+  else { delete M().ladderLog[todayISO]; tomb(tombKey.ladder(todayISO)); }
 }
 
 function wireProgress(){
@@ -2463,6 +2524,7 @@ function wireProgress(){
     const d=b.dataset.delw;
     if(!confirm(`Delete the weigh-in for ${d}?`)) return;
     S.weights=S.weights.filter(x=>x.d!==d);
+    tomb(tombKey.weight(d));
     save(); render(); toast('Weigh-in deleted.');
   });
 }
@@ -2797,9 +2859,10 @@ loadMode();
    enter it, so it must not win a "newer write" merge against a real edit
    made on another device. */
 // Both, always — || would skip the second whenever the first returned true.
+const tombsPruned  = pruneTombs();
 const targetsMoved = bumpTargets();
 const drillMoved   = bumpCharisma();
-if(targetsMoved || drillMoved) persistLocal();
+if(tombsPruned || targetsMoved || drillMoved) persistLocal();
 render();
 
 /* Identity and first sync happen after paint so the app never waits on the network. */
