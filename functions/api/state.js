@@ -33,6 +33,61 @@ const daysAgo = n => {
   return d.toISOString().slice(0, 10);
 };
 
+/* Brand New Mind. Same philosophy as the body half: days are additive so
+   nothing is lost, scalars take the higher/newer value, and journal text is
+   never silently dropped — losing something someone typed is worse than
+   keeping a stale copy of it. */
+function mergeMind(ma, mb, newerMind, olderMind){
+  const a = ma || {}, b = mb || {}, nw = newerMind || {}, od = olderMind || {};
+  const out = {
+    // Earliest start wins: whichever device began the programme did so on
+    // one real date, and a later install must not reset the week counter.
+    startDate: [a.startDate, b.startDate].filter(Boolean).sort()[0] ?? null,
+    // Monotonic on both sides. These only ever climb by design, so max is
+    // the merge — and it means a device that is behind cannot un-unlock a
+    // practice the other one has been logging.
+    unlocked : Math.max(a.unlocked  || 1, b.unlocked  || 1),
+    ladderCap: Math.max(a.ladderCap || 1, b.ladderCap || 1),
+    logs: {}, targets: {}, ladderLog: {}
+  };
+
+  const cutoff = daysAgo(RECENT_DAYS);
+  const dates = new Set([...Object.keys(a.logs || {}), ...Object.keys(b.logs || {})]);
+  for (const d of dates){
+    const la = (a.logs || {})[d] || {}, lb = (b.logs || {})[d] || {};
+    const pick = (nw.logs || {})[d] ?? (od.logs || {})[d] ?? {};
+    if (d >= cutoff){
+      out.logs[d] = {
+        done: pick.done || [], mins: pick.mins || {},
+        // Except the journal. An empty box on the newer device is far more
+        // likely to be a device that never had the text than a deliberate
+        // deletion, and a paragraph someone wrote is not worth that bet.
+        journal: (pick.journal || '').trim() ? pick.journal : (la.journal || lb.journal || '')
+      };
+    } else {
+      out.logs[d] = {
+        done: [...new Set([...(la.done || []), ...(lb.done || [])])].sort(cmp),
+        // Higher minutes wins: both sides saw the same sit, one just logged
+        // it before it finished.
+        mins: Object.fromEntries([...new Set([
+          ...Object.keys(la.mins || {}), ...Object.keys(lb.mins || {})
+        ])].map(k => [k, Math.max((la.mins || {})[k] || 0, (lb.mins || {})[k] || 0)])),
+        journal: ((la.journal || '').length >= (lb.journal || '').length ? la.journal : lb.journal) || ''
+      };
+    }
+  }
+
+  // Targets climb, same as the loads they represent.
+  for (const k of new Set([...Object.keys(a.targets || {}), ...Object.keys(b.targets || {})]))
+    out.targets[k] = Math.max((a.targets || {})[k] || 0, (b.targets || {})[k] || 0);
+
+  // A Saturday that happened, happened.
+  for (const d of new Set([...Object.keys(a.ladderLog || {}), ...Object.keys(b.ladderLog || {})]))
+    out.ladderLog[d] = (b.ladderLog || {})[d] ?? (a.ladderLog || {})[d];
+
+  return out;
+}
+
 /* Additive by default so nothing is ever lost, but recent days take the
    latest write so that unticking something on the device in your hand
    actually sticks. */
@@ -59,7 +114,8 @@ export function mergeState(stored, incoming){
     // to this class of field belongs on this list too.
     heightCm  : newer.heightCm   ?? older.heightCm   ?? null,
     birthYear : newer.birthYear  ?? older.birthYear  ?? null,
-    weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {}
+    weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {},
+    mind: mergeMind(a.mind, b.mind, newer.mind, older.mind)
   };
 
   const byDate = (xs = [], ys = []) => {

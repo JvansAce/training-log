@@ -101,7 +101,12 @@ let todayDow = new Date().getDay();
 // a session you cannot finish teaches you to ignore the number.
 const DEFAULTS = {startDate:todayISO, weights:[], waist:[], logs:{}, lifts:{}, whoop:{},
   pyramidLog:{}, pyramidCap:4, vestKg:null, vestPhase:0, barKg:20, calAdjust:0,
-  heightCm:null, birthYear:null, updatedAt:0};
+  heightCm:null, birthYear:null,
+  // Brand New Mind. Kept as one nested object so the body state above is
+  // untouched and the two can never collide.
+  mind:{startDate:null, unlocked:1, logs:{}, targets:{}, ladderLog:{}, ladderCap:1},
+  updatedAt:0};
+const MIND_DEFAULTS = () => structuredClone(DEFAULTS.mind);
 let S = structuredClone(DEFAULTS);
 let viewing = todayDow;
 let editingDate = null;   // set to an ISO date to back-fill a past day instead of today
@@ -158,6 +163,12 @@ function load(){
       if(!S.logs || typeof S.logs !== 'object') S.logs = {};
       if(!S.lifts || typeof S.lifts !== 'object') S.lifts = {};
       if(!S.whoop || typeof S.whoop !== 'object') S.whoop = {};
+      // Object.assign is shallow, so a record written before Mind existed
+      // carries no `mind` key and one written by an older-but-post-Mind
+      // build could be missing a sub-field added since. Fill both cases.
+      S.mind = Object.assign(MIND_DEFAULTS(), (S.mind && typeof S.mind==='object') ? S.mind : {});
+      for(const k of ['logs','targets','ladderLog'])
+        if(!S.mind[k] || typeof S.mind[k] !== 'object') S.mind[k] = {};
       migrateDoneKeys();
     }
   }catch(e){
@@ -205,10 +216,11 @@ function adoptMerged(merged){
 }
 function stripLocal(o){
   const {startDate,weights,waist,logs,lifts,whoop,pyramidLog,
-    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,updatedAt}=o;
+    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,mind,updatedAt}=o;
   return {updatedAt:updatedAt||0,startDate,pyramidCap,
     vestKg:vestKg??null,vestPhase:vestPhase||0,barKg:barKg??20,calAdjust,
     heightCm:heightCm??null,birthYear:birthYear??null,
+    mind:Object.assign(MIND_DEFAULTS(), mind||{}),
     weights,waist:waist||[],logs,lifts,whoop:whoop||{},pyramidLog:pyramidLog||{}};
 }
 document.addEventListener('focusout',()=>{
@@ -1087,6 +1099,235 @@ function pyramidHistory(){
   }).join(' · ')}</div>`;
 }
 
+/* ============================================================
+   BRAND NEW MIND
+
+   The other half. Same shape as the body programme deliberately: a fixed
+   list of things to do today, a load on each that climbs, a Saturday
+   session that is the hard one, and verdicts that say the unwelcome thing.
+
+   The one structural difference is that it does not start with everything
+   switched on. Six new daily habits beginning on the same Monday is how
+   you end up doing none of them by March, so practices unlock one at a
+   time — earliest by week, and only once the ones already running are
+   actually sticking. Same instinct as pyramidCap starting at 4 rather
+   than 6: a first day you cannot finish teaches you to ignore the app.
+   ============================================================ */
+
+const DAY_NAME = {0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday',6:'Saturday'};
+
+const PRACTICES = [
+  {k:'journal', n:'Journal',       grp:'Processing', wk:0,  kind:'text',
+   why:'Knowing what you think, rather than finding out mid-argument.'},
+  {k:'read',    n:'Read',          grp:'Input',      wk:2,  kind:'mins',
+   start:15, step:5, max:45, why:'Something to say. Depth, references, curiosity.'},
+  {k:'medit',   n:'Meditate',      grp:'Stillness',  wk:4,  kind:'mins',
+   start:5, step:2, max:20, timer:true, why:'Not being reactive. Presence reads as confidence.'},
+  {k:'word',    n:'Kept my word',  grp:'Character',  wk:6,  kind:'tick',
+   why:'The specific thing you said you would do. Not a virtue score.'},
+  {k:'social',  n:'Social rep',    grp:'Social',     wk:8,  kind:'tick',
+   why:'It is a skill, it is trainable, and it decays without reps.'},
+  {k:'make',    n:'Make',          grp:'Output',     wk:10, kind:'mins',
+   start:15, step:5, max:60, why:'Reading without making is just accumulating.'}
+];
+
+/* Rotates so it never becomes one rote move, and escalates across the
+   week towards Saturday. */
+const SOCIAL_REPS = {
+  1:'Reach out to someone you have not spoken to in a month',
+  2:'Ask someone a question you do not know the answer to — then a follow-up',
+  3:'Give a specific compliment. The choice, not the appearance',
+  4:'Say the thing you would normally soften',
+  5:'Talk to someone you do not know',
+  6:'The ladder — see below',
+  0:'One long conversation with the phone off the table'
+};
+
+/* Prompts get harder as the habit gets older rather than the entry getting
+   longer. Tier is by weeks in, so week one is not asking you to excavate
+   anything. */
+const PROMPTS = [
+  [ // tier 1 — weeks 0–3, build the habit
+    'What went well today?',
+    'What would you do differently?',
+    'Who did you enjoy talking to, and why?',
+    'What took more energy than it should have?',
+    'What are you looking forward to?',
+    'What did you learn today, however small?',
+    'Where did the day go?'
+  ],
+  [ // tier 2 — weeks 4–11, start observing yourself
+    'What did you avoid today, and what was the actual fear?',
+    'Where were you not honest?',
+    'What did you want to say and did not?',
+    'What did you do purely because it was expected?',
+    'When were you most yourself today?',
+    'What are you pretending not to know?',
+    'What would you do this week if you were not worried about looking stupid?'
+  ],
+  [ // tier 3 — week 12+, the ones with teeth
+    'What do you do that you would criticise in someone else?',
+    'Who are you resentful of, and what does that say about what you want?',
+    'If nothing changed for a year, what would bother you most?',
+    'What are you getting out of the problem you say you want to fix?',
+    'Who have you been unfair to lately?',
+    'What do you want that you have never said out loud?',
+    'What would the version of you from five years ago think of this week?'
+  ]
+];
+
+const LADDER = [
+  'Eye contact and a smile at a stranger',
+  'Ask a stranger a real question',
+  'Give a specific, genuine compliment',
+  'Hold a five-minute conversation with someone new',
+  'Say the unpopular thing in a group',
+  'Make a direct ask — a favour, a date, a raise',
+  'Have the conversation you have been putting off'
+];
+
+/* The catalogue that did not make the core six. Unlocks once the whole
+   core is running and has been for a while — by then the core is boring,
+   which is exactly when a new one is welcome rather than a burden. */
+const MIND_ADDINS = [
+  'Notes on what you read — reading without notes is a leaky bucket',
+  'Memorise something: a poem, a toast, three good jokes',
+  'Argue the other side of something you believe',
+  'A walk with no headphones',
+  'Ten minutes of boredom, no input at all',
+  'Host something — be the one who makes the plan',
+  'Learn a language, daily reps',
+  'An instrument, or anything with a skill floor',
+  'Cook something you have never cooked',
+  'Read outside your field entirely',
+  'Remember and use three names today',
+  'Do something for someone with no return'
+];
+const MIND_ADDIN_WEEK = 16;
+
+/* ---------------- mind: state helpers ---------------- */
+const M = () => S.mind || (S.mind = MIND_DEFAULTS());
+const mindWeeks = () => M().startDate
+  ? Math.max(0, Math.floor((new Date(todayISO) - new Date(M().startDate))/6048e5)) : 0;
+function mindLog(d = todayISO){
+  const m = M();
+  if(!m.logs[d]) m.logs[d] = {done:[], mins:{}, journal:''};
+  const l = m.logs[d];
+  if(!Array.isArray(l.done)) l.done = [];
+  if(!l.mins || typeof l.mins !== 'object') l.mins = {};
+  if(typeof l.journal !== 'string') l.journal = '';
+  return l;
+}
+/* Started on first interaction rather than at install, so a mode you
+   opened once out of curiosity three months ago does not report week 14. */
+function mindStart(){
+  if(!M().startDate){ M().startDate = todayISO; }
+}
+
+const practiceByKey = k => PRACTICES.find(p => p.k === k);
+const activePractices = () => PRACTICES.slice(0, Math.max(1, Math.min(PRACTICES.length, M().unlocked||1)));
+const nextPractice = () => PRACTICES[Math.min(PRACTICES.length, M().unlocked||1)] || null;
+
+/* Target minutes for a practice: whatever progression has raised it to,
+   or the starting load. */
+function mindTarget(p){
+  if(p.kind !== 'mins') return null;
+  const t = (M().targets||{})[p.k];
+  return Math.min(p.max, Math.max(p.start, t || p.start));
+}
+
+/* Did this practice happen on this date? A minutes practice needs the
+   minutes to have actually reached the target — logging 3 minutes of a
+   20-minute sit is not a session, and counting it would let the streak
+   and the unlock gate both drift away from reality. */
+function didPractice(p, d){
+  const l = (M().logs||{})[d];
+  if(!l) return false;
+  if(p.kind === 'mins') return (l.mins||{})[p.k] >= mindTarget(p);
+  if(p.kind === 'text') return !!(l.journal||'').trim();
+  return (l.done||[]).includes(p.k);
+}
+
+const ADHERENCE_WINDOW = 14;
+const UNLOCK_RATE = 0.7;
+/* Share of the last fortnight on which everything currently unlocked was
+   done. Only counts days since the mind programme actually started, so a
+   fresh install is not immediately judged against two weeks of blanks. */
+function mindAdherence(window = ADHERENCE_WINDOW){
+  const active = activePractices();
+  const start = M().startDate;
+  if(!start || !active.length) return null;
+  let days = 0, hits = 0;
+  for(let i = 0; i < window; i++){
+    const dt = new Date(todayISO); dt.setDate(dt.getDate() - i);
+    const d = iso(dt);
+    if(d < start || d === todayISO) continue;   // today is still in progress
+    days++;
+    hits += active.filter(p => didPractice(p, d)).length / active.length;
+  }
+  return days ? {rate: hits/days, days} : null;
+}
+
+/* Unlocking is monotonic — a bad fortnight never takes a practice away,
+   because hiding something you have been logging looks like data loss.
+   It only ever gates the NEXT one. */
+function unlockDue(){
+  const next = nextPractice();
+  if(!next || mindWeeks() < next.wk) return null;
+  const a = mindAdherence();
+  if(!a || a.days < 7) return {next, ready:false, reason:'needs a full week of history first', a};
+  return {next, ready: a.rate >= UNLOCK_RATE,
+    reason: `${Math.round(a.rate*100)}% of the last ${a.days} days — ${Math.round(UNLOCK_RATE*100)}% unlocks the next one`, a};
+}
+function unlockNext(){
+  if((M().unlocked||1) >= PRACTICES.length) return false;
+  M().unlocked = (M().unlocked||1) + 1;
+  return true;
+}
+
+/* Progression on the minute-based practices, same rule the barbell uses:
+   hit the target three sessions running and the target goes up. */
+const MIND_PROGRESS_HITS = 3;
+function mindNextTarget(p){
+  if(p.kind !== 'mins') return null;
+  const cur = mindTarget(p);
+  if(cur >= p.max) return {at:p.max, capped:true};
+  const dates = Object.keys(M().logs||{}).filter(d => d <= todayISO).sort().reverse();
+  let run = 0;
+  for(const d of dates){
+    const v = ((M().logs[d]||{}).mins||{})[p.k];
+    if(v == null) continue;                 // a day it was not attempted breaks nothing
+    if(v >= cur) run++; else break;
+    if(run >= MIND_PROGRESS_HITS) break;
+  }
+  return {at:cur, run, need:MIND_PROGRESS_HITS,
+    ready: run >= MIND_PROGRESS_HITS, next:Math.min(p.max, cur + p.step)};
+}
+function bumpTargets(){
+  let changed = false;
+  for(const p of activePractices()){
+    if(p.kind !== 'mins') continue;
+    const n = mindNextTarget(p);
+    if(n && n.ready && n.next > n.at){ M().targets[p.k] = n.next; changed = true; }
+  }
+  return changed;
+}
+
+/* ---------------- mind: today's content ---------------- */
+const promptTier = () => mindWeeks() >= 12 ? 2 : mindWeeks() >= 4 ? 1 : 0;
+/* Indexed by the day itself so the same date always shows the same prompt —
+   re-rendering after a tick must not shuffle the question out from under
+   someone halfway through answering it. */
+function promptFor(d = todayISO){
+  const tier = PROMPTS[promptTier()];
+  const days = Math.round(new Date(d).getTime()/864e5);
+  return tier[((days % tier.length) + tier.length) % tier.length];
+}
+const socialRepFor = dow => SOCIAL_REPS[dow] || SOCIAL_REPS[1];
+const isLadderDay = () => todayDow === 6;
+
+function ladderRungs(cap){ return LADDER.slice(0, Math.max(1, Math.min(LADDER.length, cap))); }
+
 /* ---------------- views ---------------- */
 const VIEWS = {};
 
@@ -1354,6 +1595,254 @@ VIEWS.progress = () => {
   </section>`;
 };
 
+/* ---------------- mind views ---------------- */
+const MIND_VIEWS = {};
+
+function practiceRow(p){
+  const l = mindLog(), done = didPractice(p, todayISO);
+  const target = mindTarget(p);
+  const mins = (l.mins||{})[p.k];
+  let sub = '', extra = '';
+
+  if(p.kind === 'mins'){
+    sub = `${target} min`;
+    extra = `<div class="logrow" data-mind-mins="${p.k}">
+      <div class="setrow">
+        <input type="number" step="1" min="0" max="600" inputmode="numeric" placeholder="min"
+          value="${mins!=null?mins:''}" data-mmin="${p.k}" aria-label="${p.n} minutes">
+        <span class="mult">of ${target}</span>
+        ${p.timer?`<button class="addset" data-mtimer="${p.k}" data-sec="${target*60}">Timer</button>`:''}
+      </div>`;
+    const n = mindNextTarget(p);
+    if(n && !n.capped && n.ready)
+      extra += `<div class="target">Earned it — next session goes to <b>${n.next} min</b></div>`;
+    else if(n && !n.capped && n.run > 0)
+      extra += `<div class="target">${n.run}/${n.need} sessions at ${n.at} min — ${n.need-n.run} more and it goes to <b>${n.next} min</b></div>`;
+    else if(n && n.capped)
+      extra += `<div class="target">At the ceiling for this one. Hold it.</div>`;
+    extra += `</div>`;
+  } else if(p.kind === 'text'){
+    sub = promptFor();
+    extra = `<div class="logrow"><textarea id="mindJournal" rows="3"
+      placeholder="Write it here — a few lines is plenty.">${escapeHtml(l.journal||'')}</textarea></div>`;
+  } else if(p.k === 'social'){
+    sub = socialRepFor(todayDow);
+  } else {
+    sub = p.why;
+  }
+
+  return `<div class="ex${done?' on':''}" data-mind="${p.k}" role="checkbox" tabindex="0"
+       aria-checked="${done}">
+    <div class="box">${CHECK}</div>
+    <div class="ex-body"><div class="ex-name">${p.n}</div>
+      <div class="ex-pre">${escapeHtml(sub)}</div>
+      ${extra}</div>
+  </div>`;
+}
+
+function ladderPanel(){
+  const cap = M().ladderCap||1;
+  const rungs = ladderRungs(cap);
+  const l = mindLog();
+  const doneCount = rungs.filter((_,i)=>(l.done||[]).includes(`rung${i+1}`)).length;
+  const atTop = cap >= LADDER.length;
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">The ladder</div>
+      <div class="ptag">Rungs 1–${cap} · ${doneCount}/${rungs.length}</div></div>
+    <div class="pnote">Saturday's session. Climb from the bottom every week — rung one is meant to be
+      trivial, and doing it first is what makes rung four possible. The cap goes up when you clear the
+      whole thing.</div>
+    ${rungs.map((r,i)=>{
+      const k = `rung${i+1}`, on = (l.done||[]).includes(k);
+      return `<div class="ex${on?' on':''}" data-mind="${k}" role="checkbox" tabindex="0" aria-checked="${on}">
+        <div class="box">${CHECK}</div>
+        <div class="ex-body"><div class="ex-name">${i+1}. ${r}</div></div>
+      </div>`;
+    }).join('')}
+    <div class="wrow">
+      <button data-ladder="-1"${cap<=1?' disabled':''}>– rung</button>
+      <button data-ladder="1"${atTop?' disabled':''}>+ rung</button>
+      <span class="ptag">${atTop?'Top of the ladder':`Next: ${LADDER[cap]}`}</span>
+    </div>
+    ${doneCount===rungs.length && !atTop ? `<div class="wrow suggest">
+      <span class="ptag">Cleared the whole ladder</span>
+      <button class="primary" data-ladder="1">Add rung ${cap+1}</button></div>` : ''}
+  </section>`;
+}
+
+function unlockPanel(){
+  const due = unlockDue();
+  const next = nextPractice();
+  const active = activePractices();
+  if(!next) return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">The programme</div><div class="ptag">All six running</div></div>
+    <div class="pnote">Every practice is in. From here the load climbs rather than the list growing${
+      mindWeeks() >= MIND_ADDIN_WEEK ? ', and the add-in pool below is open' : `, and the add-in pool opens at week ${MIND_ADDIN_WEEK+1}`}.</div>
+    ${mindWeeks() >= MIND_ADDIN_WEEK ? `<details><summary>Add-in pool</summary>
+      <div class="pnote">Pull one in when the core gets boring. Not tracked — deliberately. These are
+        things to do, not more boxes to fail to tick.</div>
+      ${MIND_ADDINS.map(a=>`<div class="chip">${a}</div>`).join('')}</details>` : ''}
+  </section>`;
+
+  const a = due && due.a;
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">The programme</div>
+      <div class="ptag">${active.length} of ${PRACTICES.length} · week ${mindWeeks()+1}</div></div>
+    <div class="pnote">One at a time, on purpose. Six new habits starting the same Monday is how you end up
+      with none of them.</div>
+    <div class="hist"><div class="hist-n">Next up: <b>${next.n}</b><div class="ex-pre">${next.why}</div></div>
+      <div class="hist-v">${mindWeeks() < next.wk
+        ? `earliest week ${next.wk+1}`
+        : due && due.ready ? '<span class="up">ready</span>' : 'not yet'}</div></div>
+    <div class="pnote">${a
+      ? `You are hitting <b>${Math.round(a.rate*100)}%</b> of the ${active.length===1?'practice':'practices'} you already have, over ${a.days} days.
+         ${mindWeeks() < next.wk
+           ? `${next.n} unlocks from week ${next.wk+1} if that holds.`
+           : due.ready ? 'That is enough — add the next one when you want it.'
+           : `${Math.round(UNLOCK_RATE*100)}% is the bar for adding another.`}`
+      : `Log a few days and this will start tracking whether you are ready for the next one.`}</div>
+    <div class="wrow">
+      <button${due && due.ready ? ' class="primary"' : ''} data-unlock="1">Add ${next.n} now</button>
+      <span class="ptag">${due && due.ready ? 'recommended' : 'your call'}</span>
+    </div>
+  </section>`;
+}
+
+MIND_VIEWS.today = () => {
+  const active = activePractices();
+  const started = !!M().startDate;
+  if(!started) return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Brand New Mind</div><div class="ptag">Not started</div></div>
+    <div class="pnote">The other half. Same idea as the training side — a fixed thing to do today, a load
+      that climbs, and a Saturday session that is the hard one. The difference is it does not start with
+      everything switched on: you begin with <b>one</b> practice and the next arrives when that one is
+      sticking.</div>
+    <div class="pnote">First up is <b>${PRACTICES[0].n}</b> — ${PRACTICES[0].why.toLowerCase()} Five minutes.
+      ${LADDER.length}-rung ladder on Saturdays from day one, starting with eye contact and a smile.</div>
+    <div class="wrow"><button class="primary" id="mindStart">Start the programme</button></div>
+  </section>`;
+
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Today</div>
+      <div class="ptag">${DAY_NAME[todayDow]} · week ${mindWeeks()+1}</div></div>
+    <div class="pnote">${active.length===1
+      ? 'One practice. Do it every day until it is boring, then the next one arrives.'
+      : `${active.length} practices. Tick what you did — a missed day is a missed day, not a reason to stop.`}</div>
+    ${active.map(practiceRow).join('')}
+  </section>
+
+  ${isLadderDay() ? ladderPanel() : ''}
+  ${unlockPanel()}`;
+};
+
+MIND_VIEWS.week = () => {
+  const active = activePractices();
+  const days = ORDER.map(d => {
+    const dt = new Date(todayISO);
+    dt.setDate(dt.getDate() - ((todayDow - d + 7) % 7));
+    return {d, date: iso(dt)};
+  });
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">The week</div><div class="ptag">Last 7 days</div></div>
+    ${days.map(({d, date}) => {
+      const hit = active.filter(p => didPractice(p, date));
+      return `<div class="daycard">
+        <div class="dayhead"><span class="daydot" style="background:${
+          hit.length===active.length ? 'var(--green)' : hit.length ? 'var(--amber)' : 'var(--line)'}"></span>
+          <span class="dayname">${SCHEDULE[d].label}</span>
+          <span class="daysub">${date===todayISO?'today':date.slice(5)} · ${hit.length}/${active.length}</span></div>
+        <div class="daylist"><div>${d===6
+          ? `<b>Ladder day</b> — ${socialRepFor(6)==='The ladder — see below'?'rungs 1–'+(M().ladderCap||1):socialRepFor(d)}`
+          : escapeHtml(socialRepFor(d))}</div></div>
+      </div>`;
+    }).join('')}
+  </section>
+
+  <section class="panel">
+    <div class="phead"><div class="ptitle">The six</div><div class="ptag">In unlock order</div></div>
+    ${PRACTICES.map((p,i)=>{
+      const on = i < active.length;
+      return `<div class="hist${on?'':' locked'}">
+        <div class="hist-n">${p.n}<div class="ex-pre">${p.grp} · ${p.why}</div></div>
+        <div class="hist-v">${on
+          ? (p.kind==='mins' ? `<b>${mindTarget(p)} min</b>` : '<span class="up">active</span>')
+          : `week ${p.wk+1}`}</div></div>`;
+    }).join('')}
+  </section>`;
+};
+
+MIND_VIEWS.progress = () => {
+  const active = activePractices();
+  const a = mindAdherence(28);
+  const streaks = active.map(p => {
+    let n = 0;
+    for(let i = 1; i < 400; i++){
+      const dt = new Date(todayISO); dt.setDate(dt.getDate() - i);
+      if(didPractice(p, iso(dt))) n++; else break;
+    }
+    // Today counts if it's already done, but not having done it yet by
+    // lunchtime must not read as a broken streak.
+    return {p, n: n + (didPractice(p, todayISO) ? 1 : 0)};
+  });
+  const journalDays = Object.values(M().logs||{}).filter(l => (l.journal||'').trim()).length;
+  const ladderWeeks = Object.keys(M().ladderLog||{}).length;
+
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Consistency</div><div class="ptag">Last 28 days</div></div>
+    <div class="macros">
+      <div class="macro"><b>${a?Math.round(a.rate*100):'–'}<span class="of">%</span></b><span>done</span></div>
+      <div class="macro"><b>${active.length}</b><span>practices</span></div>
+      <div class="macro"><b>${journalDays}</b><span>entries</span></div>
+      <div class="macro"><b>${M().ladderCap||1}</b><span>ladder cap</span></div>
+    </div>
+    <div class="pnote">${mindRead(a, streaks, ladderWeeks)}</div>
+  </section>
+
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Streaks</div><div class="ptag">Days running</div></div>
+    ${streaks.map(({p,n})=>`<div class="hist">
+      <div class="hist-n">${p.n}${p.kind==='mins'?`<div class="ex-pre">target ${mindTarget(p)} min</div>`:''}</div>
+      <div class="hist-v"><b${n>=7?' class="up"':''}>${n}</b> day${n===1?'':'s'}</div></div>`).join('')}
+    ${active.some(p=>p.kind==='mins')?`<div class="pnote">A minutes practice only counts on a day it hit
+      the target. Three at target in a row and the target goes up.</div>`:''}
+  </section>
+
+  ${journalDays ? `<section class="panel">
+    <div class="phead"><div class="ptitle">Journal</div><div class="ptag">${journalDays} entries</div></div>
+    ${Object.keys(M().logs||{}).filter(d=>(M().logs[d].journal||'').trim()).sort().reverse().slice(0,10)
+      .map(d=>`<div class="hist"><div class="hist-n">${d}
+        <div class="ex-pre">${escapeHtml(M().logs[d].journal.trim().slice(0,180))}${
+          M().logs[d].journal.trim().length>180?'…':''}</div></div></div>`).join('')}
+    <div class="pnote">Stored with the rest of your log — synced to your own account, exported by the
+      backup file, and wiped by Delete all data.</div>
+  </section>` : ''}`;
+};
+
+/* Same job as verdict() on the body side: say the unwelcome thing. */
+function mindRead(a, streaks, ladderWeeks){
+  if(!a || a.days < 5) return 'Not enough logged yet to say anything useful. Give it a week.';
+  const weakest = [...streaks].sort((x,y)=>x.n-y.n)[0];
+  const strongest = [...streaks].sort((x,y)=>y.n-x.n)[0];
+  if(a.rate >= 0.85) return `<b>${Math.round(a.rate*100)}%</b> over ${a.days} days. That is the boring
+    consistency that actually does the work — the next practice is earned, not a reward.`;
+  if(a.rate < 0.4) return `<b>${Math.round(a.rate*100)}%</b> over ${a.days} days. That is not a discipline
+    problem, it is too much at once — drop back to the practices you actually do and rebuild from there.`;
+  if(weakest && strongest && strongest.n - weakest.n >= 5) return `<b>${strongest.p.n}</b> is running at
+    ${strongest.n} days while <b>${weakest.p.n}</b> is at ${weakest.n}. One habit is carrying the average.
+    Fix the weak one before adding anything.`;
+  if(ladderWeeks === 0) return `<b>${Math.round(a.rate*100)}%</b> on the dailies and no ladder logged yet.
+    The Saturday work is the part that changes how you are with people — the rest is preparation for it.`;
+  return `<b>${Math.round(a.rate*100)}%</b> over ${a.days} days. Steady. ${Math.round(UNLOCK_RATE*100)}% is
+    the bar for taking on the next practice.`;
+}
+
 VIEWS.setup = () => {
   const sy=Sync.state();
   const syncCopy = {
@@ -1577,6 +2066,76 @@ function wireToday(){
     };
     waI.onkeydown=e=>{if(e.key==='Enter') waS.click()};
   }
+}
+
+function wireMind(){
+  const ms = document.getElementById('mindStart');
+  if(ms) ms.onclick = ()=>{ mindStart(); save(); render(); toast('Started. One practice, every day.'); };
+
+  const bind=(el,fn)=>{
+    el.onclick=fn;
+    el.onkeydown=e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); fn(); } };
+  };
+  document.querySelectorAll('[data-mind]').forEach(el=>bind(el,()=>{
+    const k = el.dataset.mind, p = practiceByKey(k);
+    const l = mindLog();
+    // A minutes practice is ticked by logging the minutes, not by tapping —
+    // otherwise the tick and the number can disagree and the streak counts
+    // a session that never happened.
+    if(p && p.kind === 'mins'){
+      const cur = (l.mins||{})[p.k], target = mindTarget(p);
+      l.mins[p.k] = cur >= target ? 0 : target;
+      save(); render();
+      return;
+    }
+    if(p && p.kind === 'text'){ document.getElementById('mindJournal')?.focus(); return; }
+    const i = l.done.indexOf(k);
+    if(i > -1) l.done.splice(i,1); else l.done.push(k);
+    if(k.startsWith('rung')) recordLadder();
+    save(); render();
+  }));
+
+  document.querySelectorAll('[data-mmin]').forEach(inp=>inp.onchange=()=>{
+    const k = inp.dataset.mmin, v = parseInt(inp.value,10);
+    const l = mindLog();
+    if(!inp.value.trim() || isNaN(v) || v < 0){ delete l.mins[k]; }
+    else l.mins[k] = Math.min(600, v);
+    if(bumpTargets()) toast('Target raised. That is the progression.');
+    save(); render();
+  });
+
+  document.querySelectorAll('[data-mtimer]').forEach(b=>b.onclick=()=>{
+    startRestTimer(+b.dataset.sec);
+    toast('Timer running. It keeps time even if you close the app.');
+  });
+
+  const j = document.getElementById('mindJournal');
+  if(j) j.onchange=()=>{ mindLog().journal = j.value; save(); toast('Saved.'); };
+
+  document.querySelectorAll('[data-ladder]').forEach(b=>b.onclick=()=>{
+    const m = M();
+    m.ladderCap = Math.max(1, Math.min(LADDER.length, (m.ladderCap||1) + +b.dataset.ladder));
+    save(); render();
+  });
+
+  const u = document.querySelector('[data-unlock]');
+  if(u) u.onclick=()=>{
+    const next = nextPractice();
+    if(!next) return;
+    if(unlockNext()){ save(); render(); toast(`${next.n} added. Every day from now.`); }
+  };
+}
+
+/* Saturday's ladder is a session that happened, so it gets recorded the
+   way the pyramid does — what the cap actually was that week, not just
+   what it is now. */
+function recordLadder(){
+  if(todayDow !== 6) return;
+  const l = mindLog();
+  const cleared = ladderRungs(M().ladderCap||1)
+    .every((_,i)=>(l.done||[]).includes(`rung${i+1}`));
+  if(cleared) M().ladderLog[todayISO] = {cap: M().ladderCap||1};
+  else delete M().ladderLog[todayISO];
 }
 
 function wireProgress(){
@@ -1822,9 +2381,29 @@ function updateFoot(){
 }
 
 /* ---------------- router ---------------- */
+/* ---------------- mode ----------------
+   Which half of the app you're looking at. Deliberately NOT in the synced
+   record: it is a per-device view preference, and having a phone flip to
+   Mind because a laptop did would be baffling. Same reasoning as the rest
+   timer's own key. */
+const MODE_KEY = 'bnb.mode.v1';
+let mode = 'body';
+function loadMode(){
+  try{ if(localStorage.getItem(MODE_KEY)==='mind') mode='mind'; }catch(e){}
+}
+function setMode(next){
+  mode = next==='mind' ? 'mind' : 'body';
+  try{ localStorage.setItem(MODE_KEY, mode); }catch(e){}
+  // Landing on a tab the other mode does not have would render nothing.
+  if(!viewsFor()[route()]) location.hash = '#/today';
+  lastRenderKey = null;
+  render();
+}
+const viewsFor = () => mode==='mind' ? {...MIND_VIEWS, setup:VIEWS.setup} : VIEWS;
+
 function route(){
   const h=(location.hash||'#/today').replace('#/','');
-  return VIEWS[h]?h:'today';
+  return viewsFor()[h]?h:'today';
 }
 // Ticking a box calls save()+render() to redraw its new state; scrolling to
 // top on every one of those (as opposed to an actual tab/day switch) used to
@@ -1833,12 +2412,14 @@ function route(){
 let lastRenderKey = null;
 function render(){
   syncClock();
+  const views=viewsFor();
   const name=route();
-  const key = name==='today' ? `today:${viewing}:${editingDate||''}` : name;
+  const key = `${mode}:${name==='today' ? `today:${viewing}:${editingDate||''}` : name}`;
   const changedView = key !== lastRenderKey;
   lastRenderKey = key;
 
-  document.getElementById('view').innerHTML=VIEWS[name]();
+  document.getElementById('view').innerHTML=views[name]();
+  renderMasthead();
   document.querySelectorAll('.tabs a').forEach(a=>
     a.classList.toggle('active',a.dataset.tab===name));
 
@@ -1847,10 +2428,31 @@ function render(){
     now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).toUpperCase();
   updateFoot();
 
-  if(name==='today') wireToday();
-  if(name==='setup') wireSetup();
-  if(name==='progress') wireProgress();
+  if(mode==='mind'){
+    if(name!=='setup') wireMind();
+    if(name==='setup') wireSetup();
+  } else {
+    if(name==='today') wireToday();
+    if(name==='setup') wireSetup();
+    if(name==='progress') wireProgress();
+  }
   if(changedView) window.scrollTo({top:0,behavior:'instant'});
+}
+
+/* The masthead is the switch. "BODY" and "MIND" are the two halves of the
+   same programme, so making one of them a tab would have implied the other
+   was a subsection of it. */
+function renderMasthead(){
+  const h=document.getElementById('modeswitch');
+  if(!h) return;
+  h.innerHTML=[['body','Body'],['mind','Mind']].map(([m,label])=>
+    `<button role="tab" aria-selected="${mode===m}" data-mode="${m}"${
+      mode===m?' class="on"':''}>${label}</button>`).join('');
+  h.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
+    if(b.dataset.mode!==mode) setMode(b.dataset.mode);
+  });
+  const t=document.getElementById('mastword');
+  if(t) t.textContent = mode==='mind' ? 'Mind' : 'Body';
 }
 
 window.addEventListener('hashchange',render);
@@ -1865,6 +2467,13 @@ document.getElementById('rtAdd').onclick=()=>{
   startRestTimer(restTimer.total+30, Math.max(restTimer.endsAt, Date.now())+30000);
 };
 load();
+loadMode();
+/* A target that earned its raise days ago should already be raised when you
+   open the app, not only once you next type a number in. persistLocal
+   rather than save: the app derived this from the log, the person did not
+   enter it, so it must not win a "newer write" merge against a real edit
+   made on another device. */
+if(bumpTargets()) persistLocal();
 render();
 
 /* Identity and first sync happen after paint so the app never waits on the network. */

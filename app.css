@@ -31,6 +31,21 @@ body{
 }
 .masthead h1 em{font-style:normal;color:var(--red)}
 
+/* mode switch */
+.modeswitch{display:flex;gap:4px;margin-top:14px}
+.modeswitch button{
+  padding:7px 16px;font-size:10px;letter-spacing:.16em;
+  background:transparent;border-color:var(--line);color:var(--muted);
+}
+.modeswitch button.on{background:var(--red);border-color:var(--red);color:var(--bone);font-weight:700}
+.modeswitch button:not(.on):hover{color:var(--bone);border-color:var(--bone);background:transparent}
+
+/* mind */
+.locked .hist-n,.locked .hist-v{opacity:.45}
+.hist.locked{opacity:1}
+[data-mind-mins] .setrow{flex-wrap:wrap}
+[data-mind-mins] .addset{margin-top:0}
+
 /* week spine */
 .spine{display:flex;gap:5px;align-items:flex-end;height:104px;margin:18px 0 24px}
 .rib{

@@ -208,6 +208,100 @@ describe('mergeState — recorded WHOOP readings merge additively by date', () =
   });
 });
 
+describe('mergeState — Brand New Mind', () => {
+  const mind = (o = {}) => ({ startDate: OLD, unlocked: 1, logs: {}, targets: {}, ladderLog: {}, ladderCap: 1, ...o });
+
+  test('the earlier start date wins, so a later install cannot reset the week counter', () => {
+    const a = base({ updatedAt: 1000, mind: mind({ startDate: '2026-01-01' }) });
+    const b = base({ updatedAt: 2000, mind: mind({ startDate: '2026-03-01' }) });
+    assert.equal(mergeState(a, b).mind.startDate, '2026-01-01');
+  });
+
+  test('unlocked and ladderCap take the higher side — a device behind cannot re-lock a practice', () => {
+    const a = base({ updatedAt: 2000, mind: mind({ unlocked: 4, ladderCap: 5 }) });  // newer but behind
+    const b = base({ updatedAt: 1000, mind: mind({ unlocked: 6, ladderCap: 7 }) });
+    const m = mergeState(a, b).mind;
+    assert.equal(m.unlocked, 6);
+    assert.equal(m.ladderCap, 7);
+  });
+
+  test('minute targets climb rather than being overwritten downward', () => {
+    const a = base({ updatedAt: 2000, mind: mind({ targets: { read: 20 } }) });
+    const b = base({ updatedAt: 1000, mind: mind({ targets: { read: 35, medit: 10 } }) });
+    const m = mergeState(a, b).mind;
+    assert.equal(m.targets.read, 35);
+    assert.equal(m.targets.medit, 10);
+  });
+
+  test('old-day practice ticks are additive across devices', () => {
+    const a = base({ updatedAt: 1000, mind: mind({ logs: { [OLD]: { done: ['word'], mins: {}, journal: '' } } }) });
+    const b = base({ updatedAt: 2000, mind: mind({ logs: { [OLD]: { done: ['social'], mins: {}, journal: '' } } }) });
+    assert.deepEqual(mergeState(a, b).mind.logs[OLD].done, ['social', 'word']);
+  });
+
+  test('the higher minute count wins on an old day — one device logged mid-session', () => {
+    const a = base({ updatedAt: 1000, mind: mind({ logs: { [OLD]: { done: [], mins: { medit: 20 }, journal: '' } } }) });
+    const b = base({ updatedAt: 2000, mind: mind({ logs: { [OLD]: { done: [], mins: { medit: 8 } , journal: '' } } }) });
+    assert.equal(mergeState(a, b).mind.logs[OLD].mins.medit, 20);
+  });
+
+  test('today takes the newer device wholesale, so unticking sticks', () => {
+    const a = base({ updatedAt: 1000, mind: mind({ logs: { [TODAY]: { done: ['word', 'social'], mins: {}, journal: '' } } }) });
+    const b = base({ updatedAt: 2000, mind: mind({ logs: { [TODAY]: { done: [], mins: {}, journal: '' } } }) });
+    assert.deepEqual(mergeState(a, b).mind.logs[TODAY].done, []);
+  });
+
+  /* Journal text is the one thing that breaks the rule above. An empty box
+     on the newer device is far more likely to be a device that never had
+     the text than a deliberate deletion, and silently eating a paragraph
+     someone wrote is not a trade worth making for consistency. */
+  test('a blank journal on the newer device does not erase what the other one wrote', () => {
+    const a = base({ updatedAt: 1000, mind: mind({ logs: { [TODAY]: { done: [], mins: {}, journal: 'wrote this morning' } } }) });
+    const b = base({ updatedAt: 2000, mind: mind({ logs: { [TODAY]: { done: [], mins: {}, journal: '' } } }) });
+    assert.equal(mergeState(a, b).mind.logs[TODAY].journal, 'wrote this morning');
+  });
+
+  test('but an actual edit to the journal does replace it', () => {
+    const a = base({ updatedAt: 1000, mind: mind({ logs: { [TODAY]: { done: [], mins: {}, journal: 'first draft' } } }) });
+    const b = base({ updatedAt: 2000, mind: mind({ logs: { [TODAY]: { done: [], mins: {}, journal: 'second draft' } } }) });
+    assert.equal(mergeState(a, b).mind.logs[TODAY].journal, 'second draft');
+  });
+
+  test('a device that has never opened Mind does not wipe it', () => {
+    const has = base({ updatedAt: 1000, mind: mind({ unlocked: 5, ladderCap: 4 }) });
+    const hasnt = base({ updatedAt: 2000 });                    // no mind key at all
+    const m = mergeState(has, hasnt).mind;
+    assert.equal(m.unlocked, 5);
+    assert.equal(m.ladderCap, 4);
+  });
+
+  test('two empty sides produce a well-formed record rather than undefined', () => {
+    const m = mergeState(base(), base()).mind;
+    assert.deepEqual(m.logs, {});
+    assert.deepEqual(m.targets, {});
+    assert.deepEqual(m.ladderLog, {});
+    assert.equal(m.unlocked, 1);
+    assert.equal(m.ladderCap, 1);
+    assert.equal(m.startDate, null);
+  });
+
+  test('a cleared ladder Saturday survives from either device', () => {
+    const a = base({ updatedAt: 1000, mind: mind({ ladderLog: { '2026-07-04': { cap: 3 } } }) });
+    const b = base({ updatedAt: 2000, mind: mind({ ladderLog: { '2026-07-11': { cap: 4 } } }) });
+    const m = mergeState(a, b).mind;
+    assert.equal(m.ladderLog['2026-07-04'].cap, 3);
+    assert.equal(m.ladderLog['2026-07-11'].cap, 4);
+  });
+
+  test('mind data does not disturb the body half', () => {
+    const a = base({ updatedAt: 1000, weights: [{ d: OLD, kg: 78 }], mind: mind({ unlocked: 3 }) });
+    const b = base({ updatedAt: 2000, weights: [{ d: TODAY, kg: 79 }] });
+    const m = mergeState(a, b);
+    assert.equal(m.weights.length, 2);
+    assert.equal(m.mind.unlocked, 3);
+  });
+});
+
 describe('mergeState — unknown fields survive (forward compatibility)', () => {
   test('a field neither this function nor the caller knows about is not dropped', () => {
     // Regression: mergeState used to rebuild a fixed-shape object from
