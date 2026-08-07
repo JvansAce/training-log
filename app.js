@@ -189,7 +189,13 @@ function load(){
     toast('Saved data could not be read. Starting fresh.');
     S = structuredClone(DEFAULTS);
   }
-  if(!S.weights.length) S.weights = [{d:todayISO, kg:79}];
+  // An account with no weigh-ins still has to render a chart, a trend and a
+  // calorie target, all of which read a bodyweight — so there is a starting
+  // placeholder. It is marked, because the weigh-in row sits at the top of
+  // Today and without the mark it told a brand-new user they had already
+  // logged 79 kg this morning. Logging for real replaces the record and the
+  // flag goes with it.
+  if(!S.weights.length) S.weights = [{d:todayISO, kg:79, seed:true}];
 }
 /* ---------------- tombstones ----------------
    Every dated collection in this app merges additively, because absence on
@@ -459,6 +465,7 @@ const bestE1rm = entry => e1rm(bestSet(entry));
 
 /* "You logged it, but it hasn't moved." Only fires with enough recent
    entries to be a real plateau rather than a two-week gap. */
+const TOPSET_RECENT = 14;   // a lift counts as "current" if trained inside this
 const STALL_DAYS = 28;
 const STALL_MIN_SESSIONS = 3;
 function stallInfo(history){
@@ -673,7 +680,10 @@ function weightChart(){
   const y=k=>H-((k-lo)/(hi-lo))*H;
   const pts=v.map((k,i)=>[(i/(v.length-1))*W, y(k)]);
   const line=pts.map((p,i)=>`${i?'L':'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
-  return `<svg class="chart" viewBox="-2 -6 108 118" aria-label="Body weight over time">
+  // The floor label used to sit at y(lo)+7 with the date row at 112 — five
+  // units apart for eight-unit text, both starting at x=0, so "75 kg" was
+  // printed on top of the start date. Each row gets its own band now.
+  return `<svg class="chart" viewBox="-2 -6 108 132" aria-label="Body weight over time">
     <line x1="0" y1="${y(lo)}" x2="100" y2="${y(lo)}" stroke="#2E3750" stroke-width=".5"/>
     <line x1="0" y1="${y(hi)}" x2="100" y2="${y(hi)}" stroke="#2E3750" stroke-width=".5"/>
     <text class="axis" x="0" y="${y(hi)-2}">${hi} kg</text>
@@ -681,8 +691,8 @@ function weightChart(){
     <path d="${line} L100 ${H} L0 ${H} Z" fill="rgba(226,59,59,.10)"/>
     <path d="${line}" fill="none" stroke="#E23B3B" stroke-width="1.4" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
     <circle cx="${pts.at(-1)[0]}" cy="${pts.at(-1)[1]}" r="2" fill="#EDE7DB"/>
-    <text class="axis" x="100" y="112" text-anchor="end">${w.at(-1).d}</text>
-    <text class="axis" x="0" y="112">${w[0].d}</text></svg>`;
+    <text class="axis" x="100" y="122" text-anchor="end">${w.at(-1).d}</text>
+    <text class="axis" x="0" y="122">${w[0].d}</text></svg>`;
 }
 /* Shared by the consistency chart and the weekly review so the two can
    never disagree about what counts. Thu (cardio) and Sun (rest) only have
@@ -787,15 +797,15 @@ function adherence(){
   }
   if(!bars.some(b=>b>0)) return `<div class="empty">Complete a session and your weekly consistency lands here.</div>`;
   const W=100,H=46,bw=W/bars.length;
-  return `<svg class="chart" style="height:96px" viewBox="-1 -4 102 60" aria-label="Sessions completed per week">
+  return `<svg class="chart" style="height:110px" viewBox="-1 -4 102 80" aria-label="Sessions completed per week">
     ${bars.map((b,i)=>{
       const h=(Math.min(b,6)/6)*H;
       const col = b>=4?'#4FB477':b>=2?'#D9A13B':'#2E3750';
       return `<rect x="${(i*bw+1.4).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${(bw-2.8).toFixed(1)}"
         height="${Math.max(h,1).toFixed(1)}" fill="${col}" rx=".8"/>
-      <text class="axis" x="${(i*bw+bw/2).toFixed(1)}" y="${H+7}" text-anchor="middle">${b}</text>`}).join('')}
-    <text class="axis" x="0" y="${H+15}">8 weeks ago</text>
-    <text class="axis" x="100" y="${H+15}" text-anchor="end">this week</text></svg>`;
+      <text class="axis" x="${(i*bw+bw/2).toFixed(1)}" y="${H+9}" text-anchor="middle">${b}</text>`}).join('')}
+    <text class="axis" x="0" y="${H+23}">8 weeks ago</text>
+    <text class="axis" x="100" y="${H+23}" text-anchor="end">this week</text></svg>`;
 }
 
 /* ---------------- WHOOP display ---------------- */
@@ -1655,7 +1665,26 @@ VIEWS.today = () => {
   const v=verdict();
   // Only offer to tick from a detected workout when the ticks would land on
   // today — not while previewing another weekday or back-filling a past one.
-  return spine + backfill + whoopBadge(canEdit && !editingDate) + `
+  // The deload prompt goes first: it decides whether today is a hard day
+  // at all, so it has to be read before the session list rather than
+  // discovered two panels down.
+  const todayW = S.weights.find(w=>w.d===todayISO);
+  const weighedToday = !!todayW && !todayW.seed;
+  /* The scale is the first thing you touch each morning; the session panel
+     is what you want during training. They cannot both be at the top, so
+     the input goes up here on its own — one row, and it says whether you
+     have already done it — while the chart and history stay in the panel
+     below. */
+  const weighRow = (canEdit && !editingDate) ? `
+    <div class="wrow weighrow">
+      <input type="number" id="wIn" step="0.1" min="40" max="200" inputmode="decimal"
+        placeholder="${weighedToday?'change this morning, kg':'this morning, kg'}"
+        aria-label="Body weight this morning in kg">
+      <button class="${weighedToday?'':'primary'}" id="wSave">${weighedToday?'Update':'Log'}</button>
+      ${weighedToday?`<span class="ptag">logged ${todayW.kg} kg</span>`:''}
+    </div>` : '';
+
+  return spine + backfill + weighRow + deloadPanel() + whoopBadge(canEdit && !editingDate) + `
   <section class="panel">
     <div class="phead"><div class="ptitle">${sched.title}</div>
       <div class="ptag">${canEdit&&!editingDate?'Today':editingDate?editingDate.slice(5):sched.label+' · preview'} · ${sched.tag}</div></div>
@@ -1676,7 +1705,16 @@ VIEWS.today = () => {
     ${!isToday&&!editingDate?`<div class="wrow"><button id="backtoday">Back to today</button></div>`:''}
   </section>
 
-  ${deloadPanel()}
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Body weight</div><div class="ptag">7-day average</div></div>
+    <div class="bigstat"><div class="n">${fmtAvg()}<sub> kg</sub></div>
+      <div class="verdict ${v.cls}">${v.html}</div></div>
+    ${spark()}
+    <div class="wrow"><input type="number" id="waistIn" step="0.5" min="50" max="150"
+      inputmode="decimal" placeholder="waist, cm (weekly)"><button id="waistSave">Log</button></div>
+    <div class="pnote">Weigh in every morning, same conditions. Judge the weekly average, never a single day.
+      Waist once a week, relaxed, at the navel — <b>scale up with the waist flat is the bulk working</b>; both climbing together means trim the surplus.</div>
+  </section>
 
   <section class="panel">
     <div class="phead"><div class="ptitle">Fuel</div><div class="ptag">${f.rest?'Rest day':'Training day'}</div></div>
@@ -1714,18 +1752,7 @@ VIEWS.today = () => {
       </div>`).join('')}
   </section>
 
-  <section class="panel">
-    <div class="phead"><div class="ptitle">Body weight</div><div class="ptag">7-day average</div></div>
-    <div class="bigstat"><div class="n">${fmtAvg()}<sub> kg</sub></div>
-      <div class="verdict ${v.cls}">${v.html}</div></div>
-    ${spark()}
-    <div class="wrow"><input type="number" id="wIn" step="0.1" min="40" max="200"
-      inputmode="decimal" placeholder="this morning, kg"><button class="primary" id="wSave">Log</button></div>
-    <div class="wrow"><input type="number" id="waistIn" step="0.5" min="50" max="150"
-      inputmode="decimal" placeholder="waist, cm (weekly)"><button id="waistSave">Log</button></div>
-    <div class="pnote">Weigh in every morning, same conditions. Judge the weekly average, never a single day.
-      Waist once a week, relaxed, at the navel — <b>scale up with the waist flat is the bulk working</b>; both climbing together means trim the surplus.</div>
-  </section>`;
+`;
 };
 
 VIEWS.week = () => {
@@ -1826,27 +1853,46 @@ VIEWS.progress = () => {
 
   <section class="panel">
     <div class="phead"><div class="ptitle">Top sets</div><div class="ptag">Best vs latest</div></div>
-    ${logged.length?logged.map(id=>{
-      const h=[...(S.lifts[id]||[])].sort((a,b)=>a.d<b.d?-1:1);
-      const days=h.map(entry=>({entry, best:bestSet(entry)})).filter(x=>x.best);
-      // A hand-edited or malformed imported backup could carry an entry
-      // with no usable sets at all — skip the lift rather than crashing
-      // the whole Progress page on an empty-array reduce.
-      if(!days.length) return '';
-      const best=days.reduce((a,b)=>beats(b.best,a.best)?b:a);
-      const lastDay=days.at(-1);
-      const isBest=lastDay===best||!beats(best.best,lastDay.best);
-      const fmtAll=e=>setsOf(e).map(fmtSet).join(' · ');
-      const vol=volumeOf(lastDay.entry), est=bestE1rm(lastDay.entry);
-      const series=days.map(x=>bestE1rm(x.entry)).filter(x=>x!=null);
-      const stall=stallInfo(h);
-      return `<div class="hist"><div class="hist-n">${named[id]||id}
-          ${series.length>1?miniSpark(series):''}
-          ${stall?`<div class="stall">no PR in ${stall.weeks} week${stall.weeks===1?'':'s'} · ${stall.sessions} sessions — change a variable</div>`:''}
-        </div>
-        <div class="hist-v"><b>${fmtAll(lastDay.entry)}</b> ${isBest?'<span class="up">▲ best</span>':''}<br>
-        ${fmtVolume(vol)}${est?` · e1RM ${est.toFixed(0)}`:''}<br>
-        best ${fmtSet(best.best)} · ${h.length} entr${h.length===1?'y':'ies'}</div></div>`}).join('')
+    ${logged.length?(()=>{
+      /* Collapsing by "trained recently" does nothing here: the programme
+         has 21 loggable lifts across the week and you train the whole week,
+         so everything is always recent. Group by the session they belong to
+         instead — that is how the list gets read, and it opens on the day
+         you are actually about to train. */
+      const row=id=>{
+        const h=[...(S.lifts[id]||[])].sort((a,b)=>a.d<b.d?-1:1);
+        const days=h.map(entry=>({entry, best:bestSet(entry)})).filter(x=>x.best);
+        // A hand-edited or malformed imported backup could carry an entry
+        // with no usable sets at all — skip the lift rather than crashing
+        // the whole Progress page on an empty-array reduce.
+        if(!days.length) return '';
+        const best=days.reduce((a,b)=>beats(b.best,a.best)?b:a);
+        const lastDay=days.at(-1);
+        const isBest=lastDay===best||!beats(best.best,lastDay.best);
+        const fmtAll=e=>setsOf(e).map(fmtSet).join(' · ');
+        const vol=volumeOf(lastDay.entry), est=bestE1rm(lastDay.entry);
+        const series=days.map(x=>bestE1rm(x.entry)).filter(x=>x!=null);
+        const stall=stallInfo(h);
+        return `<div class="hist stack"><div class="hist-n">${named[id]||id}
+            ${series.length>1?miniSpark(series):''}
+            ${stall?`<div class="stall">no PR in ${stall.weeks} week${stall.weeks===1?'':'s'} · ${stall.sessions} sessions — change a variable</div>`:''}
+          </div>
+          <div class="hist-v"><b>${fmtAll(lastDay.entry)}</b> ${isBest?'<span class="up">▲ best</span>':''}<br>
+          ${fmtVolume(vol)}${est?` · e1RM ${est.toFixed(0)}`:''} · best ${fmtSet(best.best)} · ${h.length} entr${h.length===1?'y':'ies'}</div></div>`;
+      };
+      // An id on two days (lat, calf) belongs to the first one it appears on.
+      const seen=new Set(), groups=[];
+      ORDER.forEach(d=>{
+        const ids=SCHEDULE[d].items.map(it=>it.id)
+          .filter(id=>id && id!=='pyramid' && logged.includes(id) && !seen.has(id));
+        ids.forEach(id=>seen.add(id));
+        if(ids.length) groups.push({d, ids});
+      });
+      const openDay = groups.some(g=>g.d===todayDow) ? todayDow : groups[0].d;
+      return groups.map(g=>`<details${g.d===openDay?' open':''}>
+        <summary>${SCHEDULE[g.d].label} · ${SCHEDULE[g.d].title} — ${g.ids.length} lift${g.ids.length===1?'':'s'}</summary>
+        ${g.ids.map(row).join('')}</details>`).join('');
+    })()
       :`<div class="empty">Log a set on the Today page and your progression appears here.</div>`}
     <div class="pnote">e1RM is an Epley estimate from your best set — useful for comparing a heavy triple against a lighter set of ten, not a number to go and test.</div>
   </section>`;
@@ -1942,13 +1988,8 @@ function charismaPanel(){
   <section class="panel">
     <div class="phead"><div class="ptitle">Charisma</div>
       <div class="ptag">Drill ${ix % CHARISMA.length + 1} of ${CHARISMA.length}${lap>1?` · lap ${lap}`:''}</div></div>
-    <div class="pnote">It is trainable — that is a finding, not a slogan. Randomised trials taught people
-      a fixed set of tactics and had observers rate them; the trained group's ratings for charisma and
-      leadership went up around 60%. Most of the drills below come from that list; a few are here because
-      they are the cheapest thing to fix in a conversation. The catch is that trying to remember twelve techniques mid-conversation leaves you
-      present for none of them. So: one at a time.</div>
     <div class="hist">
-      <div class="hist-n"><b>${d.n}</b><div class="ex-pre">${escapeHtml(d.how)}</div></div>
+      <div class="hist-n"><b>${d.n}</b></div>
       <div class="hist-v"><b${used>=CHARISMA_USES?' class="up"':''}>${used}</b>/${CHARISMA_USES}</div>
     </div>
     <div class="pnote">${escapeHtml(d.src)}</div>
@@ -1956,6 +1997,14 @@ function charismaPanel(){
       ? `<b>Done with this one.</b> The next drill is waiting next time you open the app.`
       : `${CHARISMA_USES - used} more day${CHARISMA_USES-used===1?'':'s'} using it and the next drill arrives.
          Tick it on the Today list when you actually used it — not when you meant to.`}</div>
+    <details>
+      <summary>Why this works</summary>
+    <div class="pnote">It is trainable — that is a finding, not a slogan. Randomised trials taught people
+      a fixed set of tactics and had observers rate them; the trained group's ratings for charisma and
+      leadership went up around 60%. Most of the drills below come from that list; a few are here because
+      they are the cheapest thing to fix in a conversation. The catch is that trying to remember twelve techniques mid-conversation leaves you
+      present for none of them. So: one at a time.</div>
+    </details>
     <details>
       <summary>The whole list</summary>
       <div class="pnote">Conversational first, then how you carry it, then the platform ones. After the
@@ -2373,16 +2422,21 @@ function wireToday(){
     save(); render(); toast('Session marked complete.');
   };
 
+  // Guarded like the waist pair below: the weigh-in row only renders for
+  // today, so previewing another weekday or back-filling has no #wSave and
+  // an unguarded bind here threw before the rest of the page was wired.
   const wS=document.getElementById('wSave'), wI=document.getElementById('wIn');
-  wS.onclick=()=>{
-    const kg=parseFloat(wI.value);
-    if(!kg||kg<40||kg>200){ wI.value=''; wI.placeholder='enter a weight in kg'; wI.focus(); return; }
-    S.weights=S.weights.filter(x=>x.d!==todayISO);
-    S.weights.push({d:todayISO,kg:Math.round(kg*10)/10});
-    untomb(tombKey.weight(todayISO));
-    save(); render(); toast('Weight logged.');
-  };
-  wI.onkeydown=e=>{if(e.key==='Enter') wS.click()};
+  if(wS&&wI){
+    wS.onclick=()=>{
+      const kg=parseFloat(wI.value);
+      if(!kg||kg<40||kg>200){ wI.value=''; wI.placeholder='enter a weight in kg'; wI.focus(); return; }
+      S.weights=S.weights.filter(x=>x.d!==todayISO);
+      S.weights.push({d:todayISO,kg:Math.round(kg*10)/10});
+      untomb(tombKey.weight(todayISO));
+      save(); render(); toast('Weight logged.');
+    };
+    wI.onkeydown=e=>{if(e.key==='Enter') wS.click()};
+  }
 
   const waS=document.getElementById('waistSave'), waI=document.getElementById('waistIn');
   if(waS&&waI){
@@ -2669,9 +2723,9 @@ function wireSetup(){
     download(toCsv(rows), `bnb-lifts-${todayISO}.csv`, 'text/csv');
     toast('Lifts CSV downloaded.');
   };
-  const imp=document.getElementById('imp');
-  document.getElementById('impBtn').onclick=()=>imp.click();
-  imp.onchange=async()=>{
+  const imp=document.getElementById('imp'), impBtn=document.getElementById('impBtn');
+  if(impBtn&&imp) impBtn.onclick=()=>imp.click();
+  if(imp) imp.onchange=async()=>{
     const file=imp.files[0]; if(!file) return;
     try{
       const data=JSON.parse(await file.text());
@@ -2681,15 +2735,17 @@ function wireSetup(){
     }catch(e){ toast('That file is not a valid backup.'); }
     imp.value='';
   };
-  document.getElementById('sdSave').onclick=()=>{
+  const sdSave=document.getElementById('sdSave');
+  if(sdSave) sdSave.onclick=()=>{
     const d=document.getElementById('sd').value;
     if(!d) return;
     S.startDate=d; save(); render(); toast('Start date saved.');
   };
-  document.getElementById('reset').onclick=async ()=>{
+  const resetBtn=document.getElementById('reset');
+  if(resetBtn) resetBtn.onclick=async ()=>{
     if(!confirm('Delete all logged data? This cannot be undone.')) return;
     S=structuredClone(DEFAULTS);
-    S.weights=[{d:todayISO,kg:79}];
+    S.weights=[{d:todayISO,kg:79,seed:true}];
     try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){}
     render(); toast('All data deleted.');
     // Best effort — the local wipe above is the part the person actually

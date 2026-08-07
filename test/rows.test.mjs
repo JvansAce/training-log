@@ -119,3 +119,34 @@ test('changing the ladder cap re-evaluates whether the week counts as cleared', 
   assert.match(mind.slice(at, at + 600), /recordLadder\(\)/,
     'raising the cap must un-record a week you have not actually cleared');
 });
+
+test('no wiring binds to an element without checking it rendered', () => {
+  /* Panels and rows are conditional all over this app — the weigh-in row
+     only renders for today, the rest timer only on lifting days, the deload
+     prompt only when recovery asks. A bind with no null check throws inside
+     render(), which aborts the rest of the wiring for that view: one absent
+     element takes the whole page's interactivity with it.
+
+     That shipped once. Moving the weigh-in input to the top of Today made
+     #wSave conditional, and previewing any other weekday crashed. */
+  const offenders = [];
+  for (const fn of ['wireToday', 'wireSetup', 'wireProgress', 'wireMind', 'wireHeight']){
+    const body = wireFn(fn);
+    // const a=getElementById('x'), b=getElementById('y');  … then a.onclick=
+    for (const m of body.matchAll(/const\s+([\w$]+)\s*=\s*document\.getElementById\([^)]*\)(?:\s*,\s*([\w$]+)\s*=\s*document\.getElementById\([^)]*\))?/g)){
+      for (const name of [m[1], m[2]].filter(Boolean)){
+        const after = body.slice(m.index);
+        const bound = new RegExp(`\\b${name}\\.(onclick|onchange|onkeydown|value|disabled)\\s*=`).exec(after);
+        if (!bound) continue;
+        // Guards come in several shapes and all of them count:
+        //   if(x)…  if(!x) return  if(a&&x)  if(!a||!x) return  x?.
+        const guard = new RegExp(
+          `if\\s*\\(\\s*!?${name}\\b` + `|&&\\s*!?${name}\\b` + `|${name}\\s*&&` +
+          `|\\|\\|\\s*!${name}\\b` + `|${name}\\?\\.`);
+        if (!guard.test(after.slice(0, bound.index)))
+          offenders.push(`${fn}: ${name} is bound with no null check`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], '\n' + offenders.join('\n'));
+});

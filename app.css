@@ -321,3 +321,32 @@ svg.chart{display:block;width:100%;height:150px;margin-top:16px;overflow:visible
   background:var(--raise);color:var(--amber);font-size:10px;letter-spacing:.06em;
 }
 .ex.on .rir{opacity:.42}
+
+/* ---- tap targets ----
+   Measured on a 390px viewport: 17 controls on Today were under 40px, and
+   the BODY/MIND switch — the most-used control in the app — was the
+   smallest thing on the page at 27px. This is a log used mid-set with
+   chalky hands, so the guidance (44pt Apple, 48dp Material) is not
+   theoretical here. Heights are floors, not fixed: nothing re-wraps. */
+button{min-height:40px}
+.modeswitch button{min-height:44px;padding-left:20px;padding-right:20px}
+input[type=number],input[type=text],input[type=date]{min-height:40px}
+/* The set inputs sit three-to-a-row and were 32px; taller is easier to hit
+   between sets and costs one line of height per exercise. */
+.logrow input{min-height:38px}
+/* Secondary chips stay compact, but not thumb-hostile. */
+.addset,.rt-row button,.wkdetect button{min-height:32px}
+.wdel{min-height:32px;min-width:32px}
+.rib{min-height:44px}
+
+/* ---- stacked history rows ----
+   Used by Top sets, where the value column is nowrap and long, so the name
+   was squeezed into a sliver and "Squat or trap bar deadlift" wrapped to
+   three lines against a single line of numbers. */
+.hist.stack{flex-direction:column;align-items:stretch;gap:4px}
+.hist.stack .hist-v{text-align:left;white-space:normal}
+.hist.stack .hist-n{font-size:14.5px}
+
+/* The morning weigh-in, lifted out of the panel to the top of the day. */
+.weighrow{margin:0 0 14px}
+.weighrow .ptag{margin-left:auto}
