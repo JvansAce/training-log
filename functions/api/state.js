@@ -48,6 +48,12 @@ function mergeMind(ma, mb, newerMind, olderMind){
     // practice the other one has been logging.
     unlocked : Math.max(a.unlocked  || 1, b.unlocked  || 1),
     ladderCap: Math.max(a.ladderCap || 1, b.ladderCap || 1),
+    // The charisma drill index only ever moves forward too. Its start date
+    // has to follow whichever side is further along rather than being
+    // min'd like startDate — pairing a newer index with an older since
+    // date would count the previous drill's ticks toward the new one.
+    charismaIx: Math.max(a.charismaIx || 0, b.charismaIx || 0),
+    charismaSince: ((a.charismaIx || 0) >= (b.charismaIx || 0) ? a : b).charismaSince ?? null,
     logs: {}, targets: {}, ladderLog: {}
   };
 

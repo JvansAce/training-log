@@ -209,7 +209,35 @@ describe('mergeState — recorded WHOOP readings merge additively by date', () =
 });
 
 describe('mergeState — Brand New Mind', () => {
-  const mind = (o = {}) => ({ startDate: OLD, unlocked: 1, logs: {}, targets: {}, ladderLog: {}, ladderCap: 1, ...o });
+  const mind = (o = {}) => ({ startDate: OLD, unlocked: 1, logs: {}, targets: {}, ladderLog: {},
+    ladderCap: 1, charismaIx: 0, charismaSince: null, ...o });
+
+  /* charismaSince is the one scalar here that must NOT be min'd like
+     startDate. Uses of the current drill are counted from it, so pairing a
+     further-along index with an older date would count the previous drill's
+     ticks toward the new one and skip it instantly. It has to travel with
+     whichever side owns the index. */
+  test('the drill index moves forward and drags its own start date with it', () => {
+    const ahead  = base({ updatedAt: 1000, mind: mind({ charismaIx: 5, charismaSince: '2026-07-01' }) });
+    const behind = base({ updatedAt: 2000, mind: mind({ charismaIx: 2, charismaSince: '2026-05-01' }) });
+    const m = mergeState(ahead, behind).mind;
+    assert.equal(m.charismaIx, 5);
+    assert.equal(m.charismaSince, '2026-07-01', 'took the losing index\'s start date');
+  });
+
+  test('the same holds with the arguments the other way round', () => {
+    const behind = base({ updatedAt: 1000, mind: mind({ charismaIx: 2, charismaSince: '2026-05-01' }) });
+    const ahead  = base({ updatedAt: 2000, mind: mind({ charismaIx: 5, charismaSince: '2026-07-01' }) });
+    const m = mergeState(behind, ahead).mind;
+    assert.equal(m.charismaIx, 5);
+    assert.equal(m.charismaSince, '2026-07-01');
+  });
+
+  test('drill ticks are additive on old days, so a lap tally is not halved', () => {
+    const a = base({ updatedAt: 1000, mind: mind({ logs: { [OLD]: { done: ['chr3'], mins: {}, journal: '' } } }) });
+    const b = base({ updatedAt: 2000, mind: mind({ logs: { [OLD]: { done: ['word'], mins: {}, journal: '' } } }) });
+    assert.deepEqual(mergeState(a, b).mind.logs[OLD].done, ['chr3', 'word']);
+  });
 
   test('the earlier start date wins, so a later install cannot reset the week counter', () => {
     const a = base({ updatedAt: 1000, mind: mind({ startDate: '2026-01-01' }) });

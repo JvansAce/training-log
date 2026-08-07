@@ -104,7 +104,8 @@ const DEFAULTS = {startDate:todayISO, weights:[], waist:[], logs:{}, lifts:{}, w
   heightCm:null, birthYear:null,
   // Brand New Mind. Kept as one nested object so the body state above is
   // untouched and the two can never collide.
-  mind:{startDate:null, unlocked:1, logs:{}, targets:{}, ladderLog:{}, ladderCap:1},
+  mind:{startDate:null, unlocked:1, logs:{}, targets:{}, ladderLog:{}, ladderCap:1,
+        charismaIx:0, charismaSince:null},
   updatedAt:0};
 const MIND_DEFAULTS = () => structuredClone(DEFAULTS.mind);
 let S = structuredClone(DEFAULTS);
@@ -1107,7 +1108,7 @@ function pyramidHistory(){
    session that is the hard one, and verdicts that say the unwelcome thing.
 
    The one structural difference is that it does not start with everything
-   switched on. Six new daily habits beginning on the same Monday is how
+   switched on. Seven new daily habits beginning on the same Monday is how
    you end up doing none of them by March, so practices unlock one at a
    time — earliest by week, and only once the ones already running are
    actually sticking. Same instinct as pyramidCap starting at 4 rather
@@ -1128,8 +1129,76 @@ const PRACTICES = [
   {k:'social',  n:'Social rep',    grp:'Social',     wk:8,  kind:'tick',
    why:'It is a skill, it is trainable, and it decays without reps.'},
   {k:'make',    n:'Make',          grp:'Output',     wk:10, kind:'mins',
-   start:15, step:5, max:60, why:'Reading without making is just accumulating.'}
+   start:15, step:5, max:60, why:'Reading without making is just accumulating.'},
+  {k:'charisma',n:'Charisma drill', grp:'Presence',  wk:12, kind:'drill',
+   why:'One named technique at a time, until it stops being a technique.'}
 ];
+
+/* ---------------- charisma ----------------
+   Charisma is trainable, and this is not a self-help claim: Antonakis,
+   Fenley and Liechti ran randomised experiments teaching twelve specific
+   "charismatic leadership tactics" and had observers rate the results —
+   trained speakers' ratings went up around 60% (HBR, "Learning Charisma",
+   2012; AMLE, "Can Charisma Be Taught?", 2011). Separately, Huang et al.
+   (JPSP 2017) found across three studies of live conversations that asking
+   questions — follow-ups especially — predicts being liked better than
+   anything else measured. In their speed-dating arm the top third of
+   question-askers got a second date 39% of the time against 22% for the
+   bottom third.
+
+   The published tactics are mostly written for someone giving a speech,
+   which is not the problem here, so the drills below start with the
+   one-to-one ones and work outward to the platform ones. Ordered by
+   payoff-per-effort: the first drill is the single best-evidenced move on
+   the list and costs nothing but attention.
+
+   One drill at a time, deliberately. Trying to remember twelve techniques
+   mid-conversation is how you end up present for none of them. */
+const CHARISMA = [
+  {n:'Follow-up questions',
+   how:'Ask a question, listen, then ask a second one that could only follow that answer.',
+   src:'The strongest single predictor of being liked in the Harvard conversation studies — and most people have no idea it works.'},
+  {n:'Presence',
+   how:'When your attention drifts mid-conversation, notice it and come back. Phone out of sight, not face-down on the table.',
+   src:'Cabane puts presence first of the three: people can tell, and they read the drift as disinterest in them.'},
+  {n:'Warmth before competence',
+   how:'Open with interest in them rather than with what you do. Let the CV come out later, or not at all.',
+   src:'Warmth is judged before competence and colours everything after it.'},
+  {n:'Stories, not summaries',
+   how:'Answer "how was your weekend" with one small scene — a place, a person, something that happened. Not an adjective.',
+   src:'Stories and anecdotes are one of the nine verbal tactics, and the easiest to use off a stage.'},
+  {n:'Land the ending',
+   how:'Finish sentences instead of trailing off. Say the last word at full volume and stop.',
+   src:'Trailing off reads as asking permission. It is the fastest thing to fix on this list.'},
+  {n:'The pause',
+   how:'When you finish a thought, say nothing. Do not fill it. Let them come in.',
+   src:'Filling every silence signals you expect to be interrupted. Holding one signals the opposite.'},
+  {n:'Let your face react',
+   how:'React visibly to what you are hearing. A face doing nothing reads as bored or hostile, never as neutral.',
+   src:'One of the three non-verbal tactics in the study.'},
+  {n:'Animated voice',
+   how:'Vary pace, pitch and volume across a single point. Slow down for the part that matters.',
+   src:'Non-verbal tactic two. A flat delivery undoes good content.'},
+  {n:'Gestures',
+   how:'Hands out of pockets. Gesture once, deliberately, on the point you want remembered.',
+   src:'Non-verbal tactic three.'},
+  {n:'Name the room',
+   how:'Say the thing everyone is thinking and nobody has said yet.',
+   src:'"Reflecting the group\'s sentiment" — the tactic that makes a group feel understood rather than addressed.'},
+  {n:'Metaphor',
+   how:'Explain one thing today by comparing it to something physical everyone already knows.',
+   src:'First on the list of nine verbal tactics, and the one that survives being repeated afterwards.'},
+  {n:'Contrast',
+   how:'Say it as "not this — but this." One sentence, both halves.',
+   src:'Contrast gives a point an edge that a plain statement does not have.'},
+  {n:'Three-part list',
+   how:'Make the point in threes. Three reasons, three examples, three words.',
+   src:'Threes are remembered and repeated. Twos sound incomplete, fours sound like a list.'},
+  {n:'Conviction',
+   how:'Say what you actually think is right, in the unhedged version, once today.',
+   src:'"Expressions of moral conviction" — the tactic people avoid, and the one that separates being liked from being followed.'}
+];
+const CHARISMA_USES = 4;   // uses of a drill before the next one arrives
 
 /* Rotates so it never becomes one rote move, and escalates across the
    week towards Saturday. */
@@ -1203,7 +1272,7 @@ const MIND_ADDINS = [
   'Remember and use three names today',
   'Do something for someone with no return'
 ];
-const MIND_ADDIN_WEEK = 16;
+const MIND_ADDIN_WEEK = 18;
 
 /* ---------------- mind: state helpers ---------------- */
 const M = () => S.mind || (S.mind = MIND_DEFAULTS());
@@ -1245,7 +1314,32 @@ function didPractice(p, d){
   if(!l) return false;
   if(p.kind === 'mins') return (l.mins||{})[p.k] >= mindTarget(p);
   if(p.kind === 'text') return !!(l.journal||'').trim();
+  // Drills are logged under the specific drill that was current that day
+  // (chr0, chr1, …), so the history says which technique you were on, not
+  // just that you did something. Any of them counts as the practice done.
+  if(p.kind === 'drill') return (l.done||[]).some(k => /^chr\d+$/.test(k));
   return (l.done||[]).includes(p.k);
+}
+
+/* The index is monotonic and never wrapped, so each lap through the list
+   gets its own keys and a second pass at "Follow-up questions" does not
+   inherit the first pass's tally. */
+const charismaIx = () => M().charismaIx || 0;
+const charismaKey = () => 'chr' + charismaIx();
+const charismaDrill = () => CHARISMA[charismaIx() % CHARISMA.length];
+const charismaLap = () => Math.floor(charismaIx() / CHARISMA.length) + 1;
+function charismaUses(){
+  const key = charismaKey(), since = M().charismaSince;
+  return Object.keys(M().logs||{})
+    .filter(d => (!since || d >= since) && ((M().logs[d]||{}).done||[]).includes(key)).length;
+}
+/* Advances on use, not on the calendar — a drill you have not practised is
+   not one you are finished with. */
+function bumpCharisma(){
+  if(charismaUses() < CHARISMA_USES) return false;
+  M().charismaIx = charismaIx() + 1;
+  M().charismaSince = todayISO;
+  return true;
 }
 
 const ADHERENCE_WINDOW = 14;
@@ -1625,6 +1719,9 @@ function practiceRow(p){
     sub = promptFor();
     extra = `<div class="logrow"><textarea id="mindJournal" rows="3"
       placeholder="Write it here — a few lines is plenty.">${escapeHtml(l.journal||'')}</textarea></div>`;
+  } else if(p.kind === 'drill'){
+    const d = charismaDrill();
+    sub = `${d.n} — ${d.how}`;
   } else if(p.k === 'social'){
     sub = socialRepFor(todayDow);
   } else {
@@ -1671,13 +1768,53 @@ function ladderPanel(){
   </section>`;
 }
 
+function charismaPanel(){
+  const d = charismaDrill(), used = charismaUses(), ix = charismaIx();
+  const lap = charismaLap();
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">Charisma</div>
+      <div class="ptag">Drill ${ix % CHARISMA.length + 1} of ${CHARISMA.length}${lap>1?` · lap ${lap}`:''}</div></div>
+    <div class="pnote">It is trainable — that is a finding, not a slogan. Randomised trials taught people
+      a fixed set of tactics and had observers rate them; the trained group's charisma ratings went up
+      around 60%. The catch is that trying to remember twelve techniques mid-conversation leaves you
+      present for none of them. So: one at a time.</div>
+    <div class="hist">
+      <div class="hist-n"><b>${d.n}</b><div class="ex-pre">${escapeHtml(d.how)}</div></div>
+      <div class="hist-v"><b${used>=CHARISMA_USES?' class="up"':''}>${used}</b>/${CHARISMA_USES}</div>
+    </div>
+    <div class="pnote">${escapeHtml(d.src)}</div>
+    <div class="pnote">${used >= CHARISMA_USES
+      ? `<b>Done with this one.</b> The next drill arrives on your next tick.`
+      : `${CHARISMA_USES - used} more day${CHARISMA_USES-used===1?'':'s'} using it and the next drill arrives.
+         Tick it on the Today list when you actually used it — not when you meant to.`}</div>
+    <details>
+      <summary>The whole list</summary>
+      <div class="pnote">Conversational first, then how you carry it, then the platform ones. After the
+        last, it laps — these are drills, not achievements, and they fade.</div>
+      ${CHARISMA.map((c,i)=>{
+        const state = i < ix % CHARISMA.length || lap > 1 ? 'done' : i === ix % CHARISMA.length ? 'now' : 'later';
+        return `<div class="hist${state==='later'?' locked':''}">
+          <div class="hist-n">${i+1}. ${c.n}<div class="ex-pre">${escapeHtml(c.how)}</div></div>
+          <div class="hist-v">${state==='now'?'<span class="up">now</span>':state==='done'?'done':''}</div>
+        </div>`;
+      }).join('')}
+    </details>
+    <div class="wrow">
+      <button data-drill="1">Skip to next drill</button>
+      <span class="ptag">if this one does not apply to you</span>
+    </div>
+  </section>`;
+}
+
 function unlockPanel(){
   const due = unlockDue();
   const next = nextPractice();
   const active = activePractices();
   if(!next) return `
   <section class="panel">
-    <div class="phead"><div class="ptitle">The programme</div><div class="ptag">All six running</div></div>
+    <div class="phead"><div class="ptitle">The programme</div>
+      <div class="ptag">All ${PRACTICES.length} running</div></div>
     <div class="pnote">Every practice is in. From here the load climbs rather than the list growing${
       mindWeeks() >= MIND_ADDIN_WEEK ? ', and the add-in pool below is open' : `, and the add-in pool opens at week ${MIND_ADDIN_WEEK+1}`}.</div>
     ${mindWeeks() >= MIND_ADDIN_WEEK ? `<details><summary>Add-in pool</summary>
@@ -1691,8 +1828,8 @@ function unlockPanel(){
   <section class="panel">
     <div class="phead"><div class="ptitle">The programme</div>
       <div class="ptag">${active.length} of ${PRACTICES.length} · week ${mindWeeks()+1}</div></div>
-    <div class="pnote">One at a time, on purpose. Six new habits starting the same Monday is how you end up
-      with none of them.</div>
+    <div class="pnote">One at a time, on purpose. ${PRACTICES.length} new habits starting the same Monday is how
+      you end up with none of them.</div>
     <div class="hist"><div class="hist-n">Next up: <b>${next.n}</b><div class="ex-pre">${next.why}</div></div>
       <div class="hist-v">${mindWeeks() < next.wk
         ? `earliest week ${next.wk+1}`
@@ -1719,8 +1856,8 @@ MIND_VIEWS.today = () => {
     <div class="phead"><div class="ptitle">Brand New Mind</div><div class="ptag">Not started</div></div>
     <div class="pnote">The other half. Same idea as the training side — a fixed thing to do today, a load
       that climbs, and a Saturday session that is the hard one. The difference is it does not start with
-      everything switched on: you begin with <b>one</b> practice and the next arrives when that one is
-      sticking.</div>
+      everything switched on: you begin with <b>one</b> practice, and the next of the ${PRACTICES.length}
+      arrives when that one is sticking.</div>
     <div class="pnote">First up is <b>${PRACTICES[0].n}</b> — ${PRACTICES[0].why.toLowerCase()} Five minutes.
       ${LADDER.length}-rung ladder on Saturdays from day one, starting with eye contact and a smile.</div>
     <div class="wrow"><button class="primary" id="mindStart">Start the programme</button></div>
@@ -1737,6 +1874,7 @@ MIND_VIEWS.today = () => {
   </section>
 
   ${isLadderDay() ? ladderPanel() : ''}
+  ${active.some(p => p.kind === 'drill') ? charismaPanel() : ''}
   ${unlockPanel()}`;
 };
 
@@ -1765,7 +1903,7 @@ MIND_VIEWS.week = () => {
   </section>
 
   <section class="panel">
-    <div class="phead"><div class="ptitle">The six</div><div class="ptag">In unlock order</div></div>
+    <div class="phead"><div class="ptitle">The practices</div><div class="ptag">In unlock order</div></div>
     ${PRACTICES.map((p,i)=>{
       const on = i < active.length;
       return `<div class="hist${on?'':' locked'}">
@@ -2089,11 +2227,28 @@ function wireMind(){
       return;
     }
     if(p && p.kind === 'text'){ document.getElementById('mindJournal')?.focus(); return; }
+    // The charisma tick is logged under whichever drill is current, so the
+    // history records the technique and not just the fact of a tick.
+    if(p && p.kind === 'drill'){
+      const key = charismaKey();
+      const at = l.done.indexOf(key);
+      if(at > -1) l.done.splice(at,1); else l.done.push(key);
+      if(bumpCharisma()) toast(`Next drill: ${charismaDrill().n}.`);
+      save(); render();
+      return;
+    }
     const i = l.done.indexOf(k);
     if(i > -1) l.done.splice(i,1); else l.done.push(k);
     if(k.startsWith('rung')) recordLadder();
     save(); render();
   }));
+
+  const dr = document.querySelector('[data-drill]');
+  if(dr) dr.onclick=()=>{
+    M().charismaIx = charismaIx() + 1;
+    M().charismaSince = todayISO;
+    save(); render(); toast(`Skipped. Now: ${charismaDrill().n}.`);
+  };
 
   document.querySelectorAll('[data-mmin]').forEach(inp=>inp.onchange=()=>{
     const k = inp.dataset.mmin, v = parseInt(inp.value,10);
@@ -2473,7 +2628,10 @@ loadMode();
    rather than save: the app derived this from the log, the person did not
    enter it, so it must not win a "newer write" merge against a real edit
    made on another device. */
-if(bumpTargets()) persistLocal();
+// Both, always — || would skip the second whenever the first returned true.
+const targetsMoved = bumpTargets();
+const drillMoved   = bumpCharisma();
+if(targetsMoved || drillMoved) persistLocal();
 render();
 
 /* Identity and first sync happen after paint so the app never waits on the network. */
