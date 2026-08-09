@@ -108,6 +108,11 @@ let todayDow = new Date().getDay();
 const DEFAULTS = {startDate:todayISO, weights:[], waist:[], logs:{}, lifts:{}, whoop:{},
   pyramidLog:{}, pyramidCap:4, vestKg:null, vestPhase:0, barKg:20, calAdjust:0,
   heightCm:null, birthYear:null, deloadLog:{}, deloadSnooze:null, tombs:{},
+  // Days away from the programme, one key per day: {'2026-08-11':'ill'}.
+  // A per-day map rather than a start/end range because every other dated
+  // collection here is one, so it merges, tombstones and syncs with the
+  // machinery that already exists instead of needing its own.
+  off:{},
   // Brand New Mind. Kept as one nested object so the body state above is
   // untouched and the two can never collide.
   mind:{startDate:null, unlocked:1, logs:{}, targets:{}, ladderLog:{}, ladderCap:1,
@@ -166,7 +171,7 @@ function normalise(o){
   const s = Object.assign(structuredClone(DEFAULTS), o || {});
   if(!Array.isArray(s.weights)) s.weights = [];
   if(!Array.isArray(s.waist)) s.waist = [];
-  for(const k of ['pyramidLog','logs','lifts','whoop','deloadLog','tombs'])
+  for(const k of ['pyramidLog','logs','lifts','whoop','deloadLog','tombs','off'])
     if(!s[k] || typeof s[k] !== 'object') s[k] = {};
   s.mind = Object.assign(MIND_DEFAULTS(), (s.mind && typeof s.mind==='object') ? s.mind : {});
   for(const k of ['logs','targets','ladderLog'])
@@ -218,6 +223,7 @@ const tombKey = {
   lift  : (id, d) => `lift:${id}:${d}`,
   pyr   : d => `pyr:${d}`,
   deload: d => `dl:${d}`,
+  off   : d => `off:${d}`,
   ladder: d => `mladder:${d}`
 };
 function tomb(key){ (S.tombs = S.tombs || {})[key] = Date.now(); }
@@ -272,11 +278,11 @@ function adoptMerged(merged){
 }
 function stripLocal(o){
   const {startDate,weights,waist,logs,lifts,whoop,pyramidLog,
-    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,deloadLog,deloadSnooze,tombs,mind,updatedAt}=o;
+    pyramidCap,vestKg,vestPhase,barKg,calAdjust,heightCm,birthYear,deloadLog,deloadSnooze,tombs,off,mind,updatedAt}=o;
   return {updatedAt:updatedAt||0,startDate,pyramidCap,
     vestKg:vestKg??null,vestPhase:vestPhase||0,barKg:barKg??20,calAdjust,
     heightCm:heightCm??null,birthYear:birthYear??null,
-    deloadLog:deloadLog||{},deloadSnooze:deloadSnooze??null,tombs:tombs||{},
+    deloadLog:deloadLog||{},deloadSnooze:deloadSnooze??null,tombs:tombs||{},off:off||{},
     mind:Object.assign(MIND_DEFAULTS(), mind||{}),
     weights,waist:waist||[],logs,lifts,whoop:whoop||{},pyramidLog:pyramidLog||{}};
 }
@@ -315,6 +321,116 @@ function dayLog(d=editingDate||todayISO){
   l.done=l.done||[]; l.mob=l.mob||[]; l.note=l.note||'';
   return l;
 }
+/* ---------------- time off ----------------
+   Illness and holidays are not adherence failures, but every derived number
+   in this app treated them as one. A week of flu broke a sixteen-week green
+   streak. WHOOP recovery sat red for four days and the app prescribed a
+   deload — burning the 28-day cooldown on fatigue that was viral, not
+   training. Worst of all, the scale: glycogen carries about 3 g of water per
+   gram, and Olsson & Saltin measured a 2.4 kg bodyweight swing over four
+   days of carbohydrate loading. Stop eating for three days with a fever and
+   the same thing runs backwards. The 28-day least-squares trend read that as
+   a real loss and offered a one-tap +200 kcal; the refill on the way back
+   read as a real gain and told you to hold. Both were water.
+
+   So days off are recorded, and the derived numbers are told to look away.
+   Nothing here changes what the scale says — the weight is the weight. It
+   changes what the app is willing to conclude from it. */
+const OFF_KINDS = {
+  ill : {label:'Ill', short:'ill'},
+  away: {label:'Away', short:'away'}
+};
+const offKind = d => (S.off || {})[d] || null;
+const isOffDay = d => !!offKind(d);
+const offToday = () => offKind(todayISO);
+
+function setOff(d, kind){
+  S.off = S.off || {};
+  if(kind){ S.off[d] = kind; untomb(tombKey.off(d)); }
+  else { delete S.off[d]; tomb(tombKey.off(d)); }
+}
+/* Inclusive on both ends, and capped so a mis-typed year cannot write
+   thousands of keys into a record that syncs on every change. */
+const OFF_MAX_SPAN = 90;
+function setOffRange(from, to, kind){
+  if(!from || !to || to < from) return 0;
+  let count = 0;
+  const dt = new Date(from + 'T00:00:00'), end = new Date(to + 'T00:00:00');
+  while(dt <= end && count < OFF_MAX_SPAN){ setOff(iso(dt), kind); dt.setDate(dt.getDate()+1); count++; }
+  return count;
+}
+/* The current unbroken run of off days ending today, or null. Walks back
+   from today rather than reading a stored range, so a run assembled a day at
+   a time and one marked as a block behave identically. */
+function currentOff(){
+  if(!offToday()) return null;
+  let n = 0, kind = offToday(), start = todayISO;
+  const dt = new Date(todayISO);
+  // Stepping the Date rather than subtracting milliseconds: an hour lost or
+  // gained to daylight saving inside the run would otherwise skip or repeat
+  // a day and mis-count the length.
+  while(isOffDay(iso(dt)) && n < OFF_MAX_SPAN){
+    start = iso(dt);
+    kind = offKind(start);     // the earliest day of the run names it
+    n++; dt.setDate(dt.getDate()-1);
+  }
+  return {kind, days:n, since:start};
+}
+/* The last day off, and how long ago it ended. Drives the return ramp. */
+function lastOff(){
+  const days = Object.keys(S.off || {}).filter(d => d <= todayISO).sort();
+  if(!days.length) return null;
+  const end = days.at(-1);
+  // Length of the run that ends there, so "back after 3 days" and "back
+  // after three weeks" can be told apart.
+  let n = 0;
+  const dt = new Date(end);
+  while(isOffDay(iso(dt)) && n < OFF_MAX_SPAN){ n++; dt.setDate(dt.getDate()-1); }
+  return {end, days:n, kind:offKind(end), since:Math.round((new Date(todayISO)-new Date(end))/864e5)};
+}
+const offBetween = (a, b) => Object.keys(S.off || {}).filter(d => d >= a && d <= b).length;
+
+/* ---- what the derived numbers do about it ----
+
+   Layoff thresholds come from the detraining literature rather than
+   instinct: strength is close to unchanged across two weeks off, and losses
+   only become meaningful after roughly three to four weeks of complete
+   inactivity. So a short break earns a lighter first session back, not a
+   lighter bar; a long one earns both. */
+const OFF_RAMP_MIN   = 4;    // days off below this need no ramp at all
+const OFF_LONG       = 14;   // at or beyond this, back off the load too, not just the volume
+const OFF_RAMP_DAYS  = 7;    // how long the ramp advice stays up after coming back
+const OFF_WEIGH_HOLD = 4;    // days after a break during which weigh-ins are water, not signal
+
+/* Gaps in a single lift's history, which is a different measure from days
+   off and needs different numbers. Every lift here comes round once or twice
+   a week, so a 7-day gap is the normal cadence — anything keyed at or below
+   that would read every ordinary weekly session as a layoff and suppress
+   progression on the whole programme, permanently. These are gaps that mean
+   a session was genuinely missed: 12 days is at least one skipped week even
+   allowing for a few days of drift, and 28 is roughly where the detraining
+   literature puts meaningful strength loss for a lift left alone entirely. */
+const LIFT_LAYOFF = 12, LIFT_LAYOFF_LONG = 28;
+
+/* Weigh-ins the trend must not draw a line through: the days off themselves,
+   and the refill afterwards. Four days is Olsson & Saltin's loading window —
+   the period over which the water actually comes back. */
+function offSkipsWeighIn(d){
+  if(isOffDay(d)) return true;
+  for(let i = 1; i <= OFF_WEIGH_HOLD; i++){
+    const dt = new Date(d); dt.setDate(dt.getDate() - i);
+    if(isOffDay(iso(dt))) return true;
+  }
+  return false;
+}
+function returnRamp(){
+  const l = lastOff();
+  if(!l || offToday()) return null;
+  if(l.days < OFF_RAMP_MIN) return null;
+  if(l.since < 1 || l.since > OFF_RAMP_DAYS) return null;
+  return {...l, long: l.days >= OFF_LONG};
+}
+
 /* ---------------- fuel ----------------
    The target used to be two constants, 2900 and 3200, tuned once for one
    bodyweight. That is fine until the bodyweight changes: maintenance rises
@@ -397,7 +513,9 @@ const TREND_DAYS = 28;
 const TREND_MIN_POINTS = 4;
 const TREND_MIN_SPAN = 10;
 function trend(){
-  const w=sortW();
+  // Drop the days off and their refill before anything else, so the 28-day
+  // window is 28 days of comparable mornings rather than 28 calendar days.
+  const w=sortW().filter(x=>!offSkipsWeighIn(x.d));
   if(w.length<TREND_MIN_POINTS) return null;
   const cutoff=new Date(w.at(-1).d);
   cutoff.setDate(cutoff.getDate()-TREND_DAYS);
@@ -413,17 +531,24 @@ function trend(){
   let num=0, den=0;
   for(let i=0;i<xs.length;i++){ num+=(xs[i]-mx)*(ys[i]-my); den+=(xs[i]-mx)**2; }
   if(!den) return null;
-  return {rate:(num/den)*30, days:span, points:win.length};
+  const skipped = sortW().filter(x=>offSkipsWeighIn(x.d)).length;
+  return {rate:(num/den)*30, days:span, points:win.length, skipped};
 }
 const CAL_STEP = 200;
 function verdict(){
   const t=trend();
-  if(!t) return {cls:'',html:`Log ${TREND_MIN_POINTS}+ weigh-ins over a couple of weeks to see your rate.`};
+  if(!t) return {cls:'',html: offToday() || returnRamp()
+    ? `Weigh-ins around time off are water, not progress — the rate comes back once there are ${TREND_MIN_POINTS}+ ordinary mornings again.`
+    : `Log ${TREND_MIN_POINTS}+ weigh-ins over a couple of weeks to see your rate.`};
   const r=t.rate, cls = r<0.35?'slow':r>1.0?'fast':'ok';
   const tail = cls==='slow' ? `Below target — add ${CAL_STEP} kcal (more milk, bigger rice portion).`
              : cls==='fast' ? 'Faster than a lean bulk needs. Hold calories steady.'
              : 'On target for a lean bulk.';
-  return {cls, html:`<b>${r>0?'+':''}${r.toFixed(2)} kg / month</b> over the last ${Math.round(t.days)} days. ${tail}`};
+  // Plain text, not a .ptag: that class is nowrap, and a sentence this long
+  // in a nowrap chip pushed the page 26px sideways on a 390px screen.
+  const held = t.skipped
+    ? ` <span class="dim">(${t.skipped} weigh-in${t.skipped===1?'':'s'} around time off left out)</span>` : '';
+  return {cls, html:`<b>${r>0?'+':''}${r.toFixed(2)} kg / month</b> over the last ${Math.round(t.days)} days. ${tail}${held}`};
 }
 const weeksIn = () => Math.max(0,Math.floor((new Date(todayISO)-new Date(S.startDate))/6048e5));
 const fmtSet = e => `${e.kg?e.kg+' kg':'BW'} × ${e.reps}`;
@@ -584,6 +709,22 @@ function nextTarget(id, activeDate, prescription){
   const minReps = Math.min(...working.map(x=>x.reps));
   const kg = working[0].kg;
 
+  // Progression assumes the last session was recent. After a layoff it is
+  // arithmetic on a number your body has not seen in weeks. Strength barely
+  // moves across a fortnight off, so this repeats the load rather than
+  // dropping it — and only backs the bar off once the gap is long enough
+  // for detraining to be real.
+  const gap = Math.round((new Date(activeDate) - new Date(last.d)) / 864e5);
+  if(gap >= LIFT_LAYOFF){
+    if(kg==null) return { text:`${gap} days since this one — repeat it before chasing reps`, kg:null };
+    if(gap >= LIFT_LAYOFF_LONG){
+      const back = Math.max(loadStep(kg), Math.round(kg * 0.1 / loadStep(kg)) * loadStep(kg));
+      const to = Math.max(loadStep(kg), kg - back);
+      return { text:`${gap} days off this lift — open at <b>${to} kg</b> and climb back`, kg:to };
+    }
+    return { text:`${gap} days since this one — repeat <b>${kg} kg</b> before adding`, kg };
+  }
+
   // Every working set at or above the top of the range is the condition the
   // program actually names — not just the best set, which can hide a set
   // that fell apart.
@@ -731,6 +872,15 @@ function deloadedWeek(start, end){
   const a = iso(start), b = iso(end);
   return Object.keys(S.deloadLog || {}).some(d => d >= a && d <= b);
 }
+/* How many sessions a week has to contain to count, given the days of it
+   you were ill or away. Six trainable days normally, four of them sessions;
+   away for three of those days and the bar is two. A week with nothing left
+   in it returns 0, which the streak reads as "skip, do not judge". */
+function greenNeed(start, end){
+  const off = offBetween(iso(start), iso(end));
+  if(off <= 0) return GREEN_WEEK;
+  return Math.max(0, Math.round(GREEN_WEEK * (7 - off) / 7));
+}
 function greenStreak(){
   const from=logStart();
   if(!from) return 0;
@@ -746,7 +896,13 @@ function greenStreak(){
     // asks you to train less and then counted it against the streak it
     // rewards — telling you off for doing what it just told you to do.
     if(deloadedWeek(start,end)){ streak++; continue; }
-    if(sessionsBetween(start,end) >= GREEN_WEEK) streak++; else break;
+    // A week you were ill or away is neither a green week nor a broken one.
+    // Bridging it — rather than counting it, the way a deload is counted —
+    // keeps the number honest: a fortnight in Spain does not earn two green
+    // weeks, and it does not cost the fourteen you already had.
+    const need = greenNeed(start, end);
+    if(need <= 0) continue;
+    if(sessionsBetween(start,end) >= need) streak++; else break;
   }
   return streak;
 }
@@ -758,8 +914,10 @@ function weeklyReview(){
   const prevEnd=new Date(thisStart); prevEnd.setDate(prevEnd.getDate()-1);
 
   const done=sessionsBetween(thisStart, new Date());
-  // Target excludes the full-rest day — six trainable days a week.
-  const target=ORDER.filter(d=>d!==0).length;
+  // Target excludes the full-rest day — six trainable days a week — minus
+  // any day of this week spent ill or away.
+  const off=offBetween(iso(thisStart), iso(thisEnd));
+  const target=Math.max(0, ORDER.filter(d=>d!==0).length - off);
 
   const inRange=(a,b)=>sortW().filter(x=>{ const d=new Date(x.d); return d>=a&&d<=b; }).map(x=>x.kg);
   const thisW=inRange(thisStart,thisEnd), prevW=inRange(prevStart,prevEnd);
@@ -784,7 +942,7 @@ function weeklyReview(){
   });
 
   const streak=greenStreak();
-  return {done, target, delta, improved, streak,
+  return {done, target, delta, improved, streak, off,
     label:`${thisStart.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${thisEnd.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`};
 }
 
@@ -793,19 +951,32 @@ function adherence(){
   for(let k=7;k>=0;k--){
     const end=new Date(); end.setDate(end.getDate()-k*7);
     const start=new Date(end); start.setDate(start.getDate()-6);
-    bars.push(sessionsBetween(start,end));
+    // A short bar means one of two completely different things. Carrying the
+    // week's off-days alongside the count lets the chart say which, instead
+    // of drawing a holiday and a fortnight of excuses the same colour.
+    bars.push({n:sessionsBetween(start,end), off:offBetween(iso(start), iso(end))});
   }
-  if(!bars.some(b=>b>0)) return `<div class="empty">Complete a session and your weekly consistency lands here.</div>`;
+  if(!bars.some(b=>b.n>0)) return `<div class="empty">Complete a session and your weekly consistency lands here.</div>`;
+  const anyOff = bars.some(b=>b.off>0);
   const W=100,H=46,bw=W/bars.length;
   return `<svg class="chart" style="height:110px" viewBox="-1 -4 102 80" aria-label="Sessions completed per week">
-    ${bars.map((b,i)=>{
+    ${bars.map((x,i)=>{
+      const b=x.n;
       const h=(Math.min(b,6)/6)*H;
-      const col = b>=4?'#4FB477':b>=2?'#D9A13B':'#2E3750';
+      // Any week with days off is drawn apart from the pass/fail colours —
+      // a short bar there is a fact about the calendar, not about you.
+      const col = x.off?'#4C5878' : b>=4?'#4FB477':b>=2?'#D9A13B':'#2E3750';
       return `<rect x="${(i*bw+1.4).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${(bw-2.8).toFixed(1)}"
         height="${Math.max(h,1).toFixed(1)}" fill="${col}" rx=".8"/>
       <text class="axis" x="${(i*bw+bw/2).toFixed(1)}" y="${H+9}" text-anchor="middle">${b}</text>`}).join('')}
     <text class="axis" x="0" y="${H+23}">8 weeks ago</text>
-    <text class="axis" x="100" y="${H+23}" text-anchor="end">this week</text></svg>`;
+    <text class="axis" x="100" y="${H+23}" text-anchor="end">this week</text></svg>`
+    // The legend lives in HTML rather than as a third row of <text>. At this
+    // viewBox scale 8px of axis type is ~13px on screen and the rows are 9
+    // units apart, so a third one overlapped the second by a pixel — and it
+    // wraps here instead of being clipped.
+    + (anyOff ? `<div class="pnote dim">Blue weeks contain days marked ill or away. The bar still shows the
+        sessions you did; the target for those weeks came down to match.</div>` : '');
 }
 
 /* ---------------- WHOOP display ---------------- */
@@ -1183,8 +1354,13 @@ function recoveryDays(n){
   const out = [];
   for(let i = 1; i <= n; i++){
     const dt = new Date(todayISO); dt.setDate(dt.getDate() - i);
-    const v = (S.whoop[iso(dt)] || {}).recovery;
-    if(v != null) out.push({d: iso(dt), v});
+    const d = iso(dt);
+    // A fever tanks recovery for days, and that is the illness, not training
+    // fatigue. Counting those days would have the app prescribe a deload —
+    // and spend the 28-day cooldown — for work you did not do.
+    if(isOffDay(d)) continue;
+    const v = (S.whoop[d] || {}).recovery;
+    if(v != null) out.push({d, v});
   }
   return out;
 }
@@ -1199,6 +1375,10 @@ const inDeloadWeek = () => { const n = daysSince(lastDeload()); return n >= 0 &&
 
 function deloadSignal(){
   if(inDeloadWeek()) return null;
+  // Nothing to deload from while you are off, and the first days back are
+  // the ramp's business. DELOAD_MIN_DAYS then holds the signal until there
+  // are enough ordinary days in the window to mean anything.
+  if(offToday() || returnRamp()) return null;
   if(daysSince(lastDeload()) < DELOAD_COOLDOWN) return null;
   // The signal is a rolling window, so without a snooze "Not now" would be
   // undone by the very next render and the panel would nag on every tap.
@@ -1212,6 +1392,77 @@ function deloadSignal(){
   if(reds >= DELOAD_REDS) return {mean, reds, n: days.length, why:
     `<b>${reds} red days</b> in the last ${days.length}, at a ${mean}% average.`};
   return null;
+}
+
+/* The panel that runs while you are off, the one that runs on the way back,
+   and the small control that starts either. Sits above the deload prompt for
+   the same reason that one sits above the session list: it decides whether
+   today is a training day at all. */
+function offPanel(){
+  if(editingDate) return '';
+  const cur = currentOff();
+  if(cur){
+    const ill = cur.kind === 'ill';
+    return `
+    <section class="panel">
+      <div class="phead"><div class="ptitle">${ill?'Ill':'Away'}</div>
+        <div class="ptag">day ${cur.days}</div></div>
+      <div class="pnote">${ill
+        ? `<b>Above the neck — runny nose, sore throat, sneezing — easy movement is fine. Below it — fever, chest, aching, gut — do not train.</b>
+           The reason is not softness: exercising through a febrile illness is how myocarditis happens. Fever-free for 24 hours
+           without paracetamol before you count yourself back, then ease in.`
+        : `<b>Nothing here is owed while you are away.</b> Train if there is a gym and you feel like it — tick what you do and it counts.
+           Skip the lot and the streak waits for you rather than resetting.`}</div>
+      <div class="pnote">The scale, the trend and the deload prompt are all ignoring these days. Weigh in if you want the record;
+        ${ill?'a fever will take a kilo or two of water off you and it is not fat':'travel food and salt will put a kilo or two on and it is not fat'}, so
+        nothing is drawn from it until ${OFF_WEIGH_HOLD} ordinary days have passed.</div>
+      <div class="wrow"><button class="primary" id="offEnd">${ill?'Better — back today':'Back today'}</button>
+        <span class="ptag">since ${cur.since}</span></div>
+    </section>`;
+  }
+  const r = returnRamp();
+  if(!r) return '';
+  return `
+  <section class="panel">
+    <div class="phead"><div class="ptitle">First week back</div>
+      <div class="ptag">${r.days} day${r.days===1?'':'s'} ${r.kind==='ill'?'ill':'away'}</div></div>
+    <div class="pnote">${r.long
+      ? `<b>Two-thirds of the sets, ninety percent of the weight, for about a week.</b> Past a fortnight off the losses are real
+         but small, and they come back far faster than they went — the thing that actually derails people here is a first
+         session hard enough to leave them too sore to do the second.`
+      : `<b>Same weights, drop the last set of each lift for two sessions.</b> Strength barely moves across a break this short;
+         what you have lost is the tolerance for the volume, and that is what to rebuild first.`}</div>
+    <div class="pnote">The lift rows are suggesting a repeat instead of a jump until the gap closes${r.days >= 7
+      ? `, and the vest week may have drifted while you were away — <b>swap</b> on the pyramid panel puts it back in step.` : '.'}</div>
+  </section>`;
+}
+
+/* One line on a normal day, opened only when you need it. */
+function offControl(){
+  if(editingDate || offToday()) return '';
+  const tomorrow = (()=>{ const d=new Date(todayISO); d.setDate(d.getDate()+1); return iso(d); })();
+  const later = (()=>{ const d=new Date(todayISO); d.setDate(d.getDate()+OFF_MAX_SPAN); return iso(d); })();
+  return `
+  <details class="panel offctl">
+    <summary>Sick or away?</summary>
+    <div class="pnote">Marking a day takes it out of the streak, the adherence chart, the weight trend and the deload
+      signal. It does not hide anything — tick a session on an off day and it still counts.</div>
+    <div class="wrow">
+      <button id="offIll">Ill today</button>
+      <button id="offAway">Away today</button>
+    </div>
+    <div class="wrow">
+      <input type="date" id="offFrom" min="${S.startDate||''}" max="${later}" aria-label="Time off from">
+      <input type="date" id="offTo" min="${S.startDate||''}" max="${later}" aria-label="Time off to">
+    </div>
+    <div class="wrow">
+      <button id="offRangeIll">Mark ill</button>
+      <button id="offRangeAway">Mark away</button>
+      <button id="offRangeClear">Clear</button>
+    </div>
+    <div class="pnote">A range works forwards as well as back — book the holiday now and the app will already know.
+      Earliest ${S.startDate||'your start date'}, up to ${OFF_MAX_SPAN} days at a time (from ${tomorrow} onwards for a trip you have not taken).</div>
+  </details>`;
 }
 
 function deloadPanel(){
@@ -1522,15 +1773,19 @@ function mindAdherence(window = ADHERENCE_WINDOW){
   const active = activePractices();
   const start = M().startDate;
   if(!start || !active.length) return null;
-  let days = 0, hits = 0;
+  let days = 0, hits = 0, skipped = 0;
   for(let i = 0; i < window; i++){
     const dt = new Date(todayISO); dt.setDate(dt.getDate() - i);
     const d = iso(dt);
     if(d < start || d === todayISO) continue;   // today is still in progress
+    // Out of the denominator, not scored as a miss. A fortnight away would
+    // otherwise empty the whole window and hold the next unlock for a month
+    // after you got back — punishing the holiday twice.
+    if(isOffDay(d)){ skipped++; continue; }
     days++;
     hits += active.filter(p => didPractice(p, d)).length / active.length;
   }
-  return days ? {rate: hits/days, days} : null;
+  return days ? {rate: hits/days, days, skipped} : null;
 }
 
 /* Unlocking is monotonic — a bad fortnight never takes a practice away,
@@ -1684,7 +1939,7 @@ VIEWS.today = () => {
       ${weighedToday?`<span class="ptag">logged ${todayW.kg} kg</span>`:''}
     </div>` : '';
 
-  return spine + backfill + weighRow + deloadPanel() + whoopBadge(canEdit && !editingDate) + `
+  return spine + backfill + weighRow + offPanel() + deloadPanel() + whoopBadge(canEdit && !editingDate) + `
   <section class="panel">
     <div class="phead"><div class="ptitle">${sched.title}</div>
       <div class="ptag">${canEdit&&!editingDate?'Today':editingDate?editingDate.slice(5):sched.label+' · preview'} · ${sched.tag}</div></div>
@@ -1736,7 +1991,12 @@ VIEWS.today = () => {
     ${fuelWorking(f.basis)}
     <div class="wrow"><button data-cal="-100">– 100 kcal</button><button data-cal="100">+ 100 kcal</button>
       <span class="ptag">adjust ${S.calAdjust>0?'+':''}${S.calAdjust}</span></div>
-    ${v.cls==='slow'?`<div class="wrow suggest">
+    ${offToday() ? `<div class="pnote dim">${OFF_KINDS[offToday()].short==='ill'
+      ? `Appetite goes first when you are ill and forcing the surplus back down is not the win here. Protein and
+         fluids are what matter; the number can wait until you are eating normally again.`
+      : `Eat like you are on holiday. A week of it moves the 28-day average by less than one bad weigh-in day,
+         and none of these days are being scored anyway.`}</div>`
+      : v.cls==='slow'?`<div class="wrow suggest">
       <span class="ptag">Trend is below target</span>
       <button class="primary" id="applyCal">Apply + ${CAL_STEP} kcal</button>
     </div>`:''}
@@ -1751,8 +2011,7 @@ VIEWS.today = () => {
         <div class="ex-body"><div class="ex-name">${m.n}</div><div class="ex-pre">${m.p}</div></div>
       </div>`).join('')}
   </section>
-
-`;
+` + offControl();
 };
 
 VIEWS.week = () => {
@@ -1814,6 +2073,8 @@ VIEWS.progress = () => {
       <div class="macro"><b>${r.streak}</b><span>green weeks</span></div>
     </div>
     ${r.improved.length?`<div class="pnote">Beaten this week: <b>${r.improved.map(id=>named[id]||id).join(', ')}</b>.</div>`:''}
+    ${r.off?`<div class="pnote"><b>${r.off} day${r.off===1?'':'s'} ill or away this week.</b> The target above has come down to
+      match, and the streak treats the week as neither won nor lost.</div>`:''}
     <div class="pnote">${r.streak>=GREEN_WEEK
       ? `<b>${r.streak} weeks running</b> at ${GREEN_WEEK}+ sessions. This is the part that actually builds the body — keep it boring.`
       : r.streak>0
@@ -2084,7 +2345,11 @@ MIND_VIEWS.today = () => {
   <section class="panel">
     <div class="phead"><div class="ptitle">Today</div>
       <div class="ptag">${DAY_NAME[todayDow]} · week ${mindWeeks()+1}</div></div>
-    <div class="pnote">${active.length===1
+    <div class="pnote">${offToday()
+      ? `<b>Marked ${OFF_KINDS[offToday()].short} — none of this is owed today.</b> Reading and journalling survive a
+         fever and a departure lounge better than squats do, so the list is still here if you want it. Today is out
+         of the adherence window either way: it will not count against you, and it will not count for you.`
+      : active.length===1
       ? 'One practice. Do it every day until it is boring, then the next one arrives.'
       : `${active.length} practices. Tick what you did — a missed day is a missed day, not a reason to stop.`}</div>
     ${active.map(practiceRow).join('')}
@@ -2396,6 +2661,35 @@ function wireToday(){
     delete S.deloadLog[d]; tomb(tombKey.deload(d));
     save(); render(); toast('Deload ended.');
   };
+
+  const offE=document.getElementById('offEnd');
+  if(offE) offE.onclick=()=>{
+    // Ends the run at yesterday rather than clearing it: the days you were
+    // actually ill happened, and the return ramp is measured from them.
+    setOff(todayISO, null);
+    save(); render(); toast('Welcome back.');
+  };
+  const offI=document.getElementById('offIll'), offA=document.getElementById('offAway');
+  if(offI) offI.onclick=()=>{ setOff(todayISO,'ill');  save(); render(); toast('Marked ill. Rest.'); };
+  if(offA) offA.onclick=()=>{ setOff(todayISO,'away'); save(); render(); toast('Marked away.'); };
+
+  const offF=document.getElementById('offFrom'), offT=document.getElementById('offTo');
+  const rangeBtn=(id, kind, verb)=>{
+    const el=document.getElementById(id);
+    if(!el||!offF||!offT) return;
+    el.onclick=()=>{
+      const a=offF.value, b=offT.value;
+      if(!a||!b) return toast('Pick both dates.');
+      if(b<a) return toast('The end date is before the start.');
+      const nd=setOffRange(a,b,kind);
+      if(!nd) return toast('Nothing to change.');
+      save(); render();
+      toast(`${nd} day${nd===1?'':'s'} ${verb}.`);
+    };
+  };
+  rangeBtn('offRangeIll','ill','marked ill');
+  rangeBtn('offRangeAway','away','marked away');
+  rangeBtn('offRangeClear',null,'cleared');
 
   const bt=document.getElementById('backtoday');
   if(bt) bt.onclick=()=>{viewing=todayDow; render()};

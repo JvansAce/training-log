@@ -76,7 +76,13 @@ test('isFresh accounts for every top-level container in DEFAULTS', () => {
   // teaching isFresh about it is the exact shape of the original bug.
   const m = /const DEFAULTS = \{([\s\S]*?)\n *updatedAt:\s*0\};/.exec(appSrc);
   assert.ok(m, 'could not find the DEFAULTS literal');
-  const fields = [...m[1].matchAll(/(?:^|[\s{,])([a-zA-Z]+)\s*:/g)].map(x => x[1]);
+  // Comments first. The literal is annotated, and a comment containing an
+  // ordinary English colon ("one key per day: ...") reads as a field named
+  // `day` — a phantom that can never be satisfied, and which would push
+  // whoever hit it towards silencing this test rather than fixing it.
+  const body = m[1].replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const fields = [...body.matchAll(/(?:^|[\s{,])([a-zA-Z]+)\s*:/g)].map(x => x[1]);
+  assert.ok(fields.includes('off'), 'the field scan should still see real fields');
 
   // Scalars and settings cannot hold work; only containers and progress
   // counters can. Anything genuinely new will not be on this list and will

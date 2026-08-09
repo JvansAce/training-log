@@ -1,6 +1,6 @@
 /* Cache-first shell so the app works offline in the gym.
    Bump CACHE when you change any file. */
-const CACHE = 'bnb-v29';
+const CACHE = 'bnb-v30';
 const ASSETS = ['./','./index.html','./app.css','./app.js','./sync.js','./whoop.js',
   './manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png'];
 

@@ -350,3 +350,24 @@ input[type=number],input[type=text],input[type=date]{min-height:40px}
 /* The morning weigh-in, lifted out of the panel to the top of the day. */
 .weighrow{margin:0 0 14px}
 .weighrow .ptag{margin-left:auto}
+
+/* ---- sick or away ----
+   A details styled as a panel rather than a disclosure inside one: it sits
+   at the foot of Today on its own, so it needs the panel's box, and the
+   default `details` rule's top border would draw a stray line above it. */
+.offctl{
+  margin-top:18px;border:1px solid var(--line);border-top:1px solid var(--line);
+  border-radius:10px;background:var(--panel);padding:14px 16px;
+}
+.offctl > summary{margin-bottom:2px}
+.offctl[open] > summary{margin-bottom:10px}
+.offctl .wrow{margin-top:10px}
+/* Two date fields side by side have to survive a 390px viewport with the
+   iOS date control's intrinsic width, which does not shrink politely. */
+.offctl input[type=date]{flex:1 1 45%;min-width:0}
+
+/* Parenthetical detail inside a verdict or note — quieter than the body it
+   sits in, and unlike .ptag it wraps. A nowrap chip carrying a whole
+   sentence is what pushed Today 26px sideways. */
+.dim{color:var(--muted);opacity:.85}
+.pnote.dim{font-size:11.5px}

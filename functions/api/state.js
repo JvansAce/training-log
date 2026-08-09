@@ -132,6 +132,7 @@ function resurrected(tombs, a, b){
       (entries || []).forEach(e => consider(s, `lift:${id}:${e.d}`));
     Object.keys(s.pyramidLog || {}).forEach(d => consider(s, `pyr:${d}`));
     Object.keys(s.deloadLog  || {}).forEach(d => consider(s, `dl:${d}`));
+    Object.keys(s.off        || {}).forEach(d => consider(s, `off:${d}`));
     Object.keys((s.mind || {}).ladderLog || {}).forEach(d => consider(s, `mladder:${d}`));
   }
   return live;
@@ -148,6 +149,7 @@ function applyTombs(out){
   }
   for (const d of Object.keys(out.pyramidLog)) if (dead(`pyr:${d}`)) delete out.pyramidLog[d];
   for (const d of Object.keys(out.deloadLog))  if (dead(`dl:${d}`))  delete out.deloadLog[d];
+  for (const d of Object.keys(out.off))        if (dead(`off:${d}`)) delete out.off[d];
   for (const d of Object.keys(out.mind.ladderLog)) if (dead(`mladder:${d}`)) delete out.mind.ladderLog[d];
 }
 
@@ -181,7 +183,7 @@ export function mergeState(stored, incoming){
     // log itself is additive below.
     deloadSnooze: [a.deloadSnooze, b.deloadSnooze].filter(Boolean).sort().at(-1) ?? null,
     weights: [], waist: [], logs: {}, lifts: {}, whoop: {}, pyramidLog: {}, deloadLog: {},
-    tombs: {},
+    off: {}, tombs: {},
     mind: mergeMind(a.mind, b.mind, newer.mind, older.mind)
   };
 
@@ -242,6 +244,12 @@ export function mergeState(stored, incoming){
   // pyramid log — a device that was offline for it must not erase it.
   for (const d of new Set([...Object.keys(a.deloadLog || {}), ...Object.keys(b.deloadLog || {})]))
     out.deloadLog[d] = (b.deloadLog || {})[d] ?? (a.deloadLog || {})[d];
+
+  // Days ill or away. Additive by date like the deload log — a day off is a
+  // fact about a day, so a device that was not switched on for the holiday
+  // must not erase it. Deleting one is what the tombstone above is for.
+  for (const d of new Set([...Object.keys(a.off || {}), ...Object.keys(b.off || {})]))
+    out.off[d] = (b.off || {})[d] ?? (a.off || {})[d];
 
   // Recorded WHOOP readings, keyed by date. Purely additive across devices:
   // both read the same WHOOP account, so a disagreement on a given day just

@@ -55,6 +55,7 @@ const Sync = (() => {
       Object.keys(s.logs || {}).length === 0 &&
       Object.keys(s.lifts || {}).length === 0 &&
       Object.keys(s.deloadLog || {}).length === 0 &&
+      Object.keys(s.off || {}).length === 0 &&
       // Tombstones are work too — they are the only record that something
       // was deleted. A device that deleted its way back to empty and then
       // pulled would have every deletion undone.
