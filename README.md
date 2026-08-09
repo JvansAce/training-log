@@ -1,5 +1,9 @@
 # Brand New Body
 
+> **There is also a native iOS app** — a SwiftUI rewrite of this same programme
+> with SwiftData for local storage and automatic iCloud sync in place of the
+> Cloudflare backend. See [`ios/README.md`](ios/README.md).
+
 A single-page training log for the lean-bulk plan: Tuesday/Wednesday/Friday/Saturday lifting, Monday tennis, Thursday easy cardio, Sunday rest. Four pages — Today, Week, Progress, Setup. No build step, no dependencies, no backend.
 
 
