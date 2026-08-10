@@ -1,5 +1,18 @@
 import SwiftUI
 
+/// Reordered around one question: what does opening this screen at 6am in
+/// the gym actually need to happen fast?
+///
+/// The old order was housekeeping first — a weigh-in field, a recovery
+/// panel, a full weight chart with its own waist input — and the actual
+/// session, the reason the app is open at all, sixth. It's second now.
+/// Weight and recovery collapse into one glanceable strip instead of two
+/// full panels each with their own header and chrome, and the full weight
+/// story — the chart, the trend explanation, editing old weigh-ins — lives
+/// on Progress now and only there; Today shows the one line of it that's
+/// actionable this morning (the verdict) and nothing else, because
+/// re-litigating the whole trend on every single visit was the single
+/// biggest thing standing between opening the app and starting the workout.
 struct TodayView: View {
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
@@ -18,26 +31,26 @@ struct TodayView: View {
     /// Only today, or an explicitly back-filled day, can be written to.
     private var canEdit: Bool { editingDate != nil || viewingDow == state.todayDow }
     private var activeDate: String { editingDate ?? state.today }
+    private var isViewingToday: Bool { editingDate == nil && viewing == nil }
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 22) {
-            Spine(state: state, viewing: viewingDow) { viewing = $0; editingDate = nil }
+            TodayHero(state: state, viewing: viewingDow) { viewing = $0; editingDate = nil }
 
             backfillRow
 
-            if canEdit && editingDate == nil {
-                WeighRow(state: state) { store.logWeight(kg: $0, on: state.today) }
-            }
-
             OffPanel(state: state, editing: editingDate != nil)
             DeloadPanel(state: state, editing: editingDate != nil)
-            RecoveryPanel(state: state)
+
+            if isViewingToday {
+                VitalsRow(state: state)
+            }
 
             SessionPanel(state: state, dow: viewingDow, canEdit: canEdit,
                          activeDate: activeDate, editingDate: editingDate,
+                         showWorkoutBanner: isViewingToday,
                          onBackToToday: { viewing = nil; editingDate = nil })
 
-            WeightPanel(state: state)
             FuelPanel(state: state, dow: viewingDow, canEdit: canEdit, activeDate: activeDate)
             MobilityPanel(state: state, canEdit: canEdit, activeDate: activeDate)
 
@@ -72,90 +85,193 @@ struct TodayView: View {
     }
 }
 
-// MARK: - Spine
+// MARK: - Hero
 
-/// The seven ribs. The current day carries a fill showing how much of it is
-/// ticked, which is the only progress indicator the app has and the reason the
-/// spine is at the top rather than the plan.
-private struct Spine: View {
+/// Today's actual headline: how much of it is done, not a subtle fill
+/// creeping up inside a small rib that was easy to miss entirely. The
+/// weekday strip is secondary now — navigation, not the main event — so it's
+/// smaller and plainer than the number above it.
+private struct TodayHero: View {
     var state: LogState
     var viewing: Int
     var onSelect: (Int) -> Void
 
-    static let ribHeight: CGFloat = 48
+    private var todayItems: [Exercise] { Plan.day(state.todayDow).items }
+    private var doneCount: Int { min(state.day(state.today).done.count, todayItems.count) }
+    private var totalCount: Int { todayItems.count }
+    private var fraction: Double { totalCount > 0 ? Double(doneCount) / Double(totalCount) : 0 }
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(Plan.order, id: \.self) { dow in
-                let day = Plan.day(dow)
-                let isToday = dow == state.todayDow
-                Button { onSelect(dow) } label: {
-                    ZStack(alignment: .bottom) {
-                        Theme.slate
-                        // How much of today is ticked, rising from the foot of
-                        // the rib. A fixed height rather than a GeometryReader
-                        // because a reader inside a ZStack claims all the space
-                        // it is offered and would size the whole row.
-                        if isToday {
-                            Rectangle()
-                                .fill(Theme.red.opacity(0.22))
-                                .frame(height: Self.ribHeight * completion)
-                        }
-                        VStack(spacing: 6) {
-                            Circle().fill(day.color).frame(width: 7, height: 7)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(doneCount)")
+                    .font(Theme.display(44))
+                    .foregroundStyle(Theme.bone)
+                Text("of \(totalCount) done today")
+                    .font(Theme.body(15, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
+                Spacer(minLength: 0)
+            }
+
+            Capsule()
+                .fill(Theme.raise)
+                .frame(height: 6)
+                .overlay(alignment: .leading) {
+                    GeometryReader { geo in
+                        Capsule()
+                            .fill(Theme.red)
+                            .frame(width: geo.size.width * fraction)
+                    }
+                }
+
+            HStack(spacing: 4) {
+                ForEach(Plan.order, id: \.self) { dow in
+                    let day = Plan.day(dow)
+                    let isToday = dow == state.todayDow
+                    let isViewing = dow == viewing
+                    Button { onSelect(dow) } label: {
+                        VStack(spacing: 5) {
                             Text(day.label)
                                 .font(Theme.mono(10, weight: isToday ? .bold : .regular))
-                                .foregroundStyle(dow == viewing ? Theme.bone : Theme.muted)
+                                .foregroundStyle(isViewing ? Theme.bone : Theme.muted)
+                            Circle()
+                                .fill(day.color.opacity(isViewing ? 1 : 0.4))
+                                .frame(width: 6, height: 6)
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(isViewing ? Theme.raise : Color.clear, in: RoundedRectangle(cornerRadius: 10))
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: Self.ribHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: 9))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9)
-                            .stroke(dow == viewing ? Theme.bone.opacity(0.6) : Theme.line, lineWidth: 1)
-                    )
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(day.label), \(day.title)")
+                    .accessibilityAddTraits(isViewing ? [.isSelected] : [])
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(day.label), \(day.title)")
             }
         }
-    }
-
-    private var completion: Double {
-        let items = Plan.day(state.todayDow).items
-        guard !items.isEmpty else { return 0 }
-        return Double(state.day(state.today).done.count) / Double(items.count)
     }
 }
 
-// MARK: - Weigh-in
+// MARK: - Vitals
 
-private struct WeighRow: View {
+/// Weight and recovery, merged into one glanceable strip instead of two full
+/// panels. Both used to be a whole `Panel` each — header, chrome, an
+/// always-visible input field with its own button — stacked one above the
+/// other before the actual workout ever appeared on screen. This is the
+/// two numbers that matter for a two-second glance, with everything else —
+/// the actual entry fields, WHOOP's fuller breakdown — one tap away rather
+/// than permanently on screen.
+private struct VitalsRow: View {
     var state: LogState
-    var onLog: (Double) -> Void
+    @Environment(AppStore.self) private var store
+    @Environment(WhoopClient.self) private var whoop
 
-    private var todayEntry: WeightRecord? {
+    private var todayWeight: WeightRecord? {
         state.weights.first { $0.date == state.today && !$0.seed }
     }
+    private var recovery: RecoveryRecord? { state.recovery[state.today] }
+    private var isWhoopConnected: Bool { whoop.status == .connected }
+    private var recoveryValue: Int? { recovery?.recovery }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            EntryField(
-                placeholder: todayEntry == nil ? "this morning, kg" : "change this morning, kg",
-                buttonTitle: todayEntry == nil ? "Log" : "Update",
-                prominent: todayEntry == nil
-            ) { text in
-                guard let kg = Double(text.replacingOccurrences(of: ",", with: ".")),
-                      kg >= 40, kg <= 200 else { return false }
-                onLog(kg)
-                return true
+        Panel(title: "Vitals", tag: nil) {
+            HStack(spacing: 0) {
+                stat(value: todayWeight.map { String(format: "%.1f", $0.kg) } ?? "–",
+                     unit: "kg", label: "weight",
+                     tint: todayWeight != nil ? Theme.bone : Theme.muted)
+                Rectangle().fill(Theme.line).frame(width: 1, height: 32)
+                stat(value: recoveryValue.map(String.init) ?? "–",
+                     unit: "%", label: "recovery", tint: recoveryTint)
             }
-            if let todayEntry {
-                PTag("logged \(String(format: "%.1f", todayEntry.kg)) kg", tint: Theme.green)
+
+            VerdictLine(text: Trend.verdictText(state), tone: Trend.verdict(state))
+            Sparkline(values: state.sortedWeights.suffix(30).map(\.kg))
+
+            if let recoveryValue, recoveryValue < Deload.redRecovery {
+                Note("""
+                    Recovery is red today. If today's session has any give in it — Thursday's cardio, the \
+                    pyramid — this is the day to take it.
+                    """)
+            }
+
+            if isWhoopConnected, whoop.today != nil {
+                Reveal(title: "Strain, sleep, HRV") {
+                    HStack(spacing: 18) {
+                        miniStat(recovery?.strain.map { String(format: "%.1f", $0) } ?? "–", "strain")
+                        miniStat(recovery?.sleepPct.map { "\($0)%" } ?? "–", "sleep")
+                        miniStat(recovery?.hrvMs.map { "\(Int($0.rounded()))" } ?? "–", "hrv ms")
+                        miniStat(recovery?.restingHR.map { "\($0)" } ?? "–", "rhr")
+                    }
+                }
+            }
+
+            Reveal(title: "Log today's numbers") {
+                VStack(alignment: .leading, spacing: 10) {
+                    EntryField(
+                        placeholder: todayWeight == nil ? "this morning, kg" : "change this morning, kg",
+                        buttonTitle: todayWeight == nil ? "Log" : "Update",
+                        prominent: todayWeight == nil
+                    ) { text in
+                        guard let kg = Double(text.replacingOccurrences(of: ",", with: ".")),
+                              kg >= 40, kg <= 200 else { return false }
+                        store.logWeight(kg: kg, on: state.today)
+                        return true
+                    }
+                    if !isWhoopConnected {
+                        EntryField(placeholder: "recovery %, if you don't", buttonTitle: "Log",
+                                   prominent: false, keyboard: .numberPad) { text in
+                            guard let value = Int(text), (0...100).contains(value) else { return false }
+                            store.setRecovery(value, on: state.today)
+                            return true
+                        }
+                        if let recoveryValue {
+                            HStack {
+                                PTag("logged \(recoveryValue)%")
+                                ActionButton(title: "Clear") { store.setRecovery(nil, on: state.today) }
+                            }
+                        }
+                    }
+                    EntryField(placeholder: "waist, cm (weekly)", buttonTitle: "Log", prominent: false) { text in
+                        guard let cm = Double(text.replacingOccurrences(of: ",", with: ".")),
+                              cm >= 50, cm <= 150 else { return false }
+                        store.logWaist(cm: cm, on: state.today)
+                        return true
+                    }
+                    if !isWhoopConnected {
+                        if case .notConnected(let reason) = whoop.status, let reason {
+                            Note(reason, dimmed: true)
+                        }
+                        ActionButton(title: "Connect WHOOP") { whoop.connect() }
+                    }
+                }
             }
         }
+    }
+
+    private var recoveryTint: Color {
+        guard let recoveryValue else { return Theme.muted }
+        return recoveryValue < Deload.redRecovery ? Theme.red : Theme.bone
+    }
+
+    private func stat(value: String, unit: String, label: String, tint: Color) -> some View {
+        VStack(spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value).font(Theme.display(26)).foregroundStyle(tint)
+                Text(unit).font(Theme.mono(11)).foregroundStyle(Theme.muted)
+            }
+            .minimumScaleFactor(0.7)
+            .lineLimit(1)
+            Text(label.uppercased())
+                .font(Theme.mono(9)).tracking(1).foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func miniStat(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(Theme.mono(14, weight: .bold)).foregroundStyle(Theme.bone)
+            Text(label).font(Theme.mono(9)).foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -304,122 +420,6 @@ private struct DeloadPanel: View {
     }
 }
 
-// MARK: - Recovery
-
-/// In the web app these readings came from WHOOP over an OAuth flow that
-/// needed a server. This version has no server, so the number is typed —
-/// everything downstream (the deload signal, the Progress chart) is unchanged,
-/// because it only ever read a percentage out of the record.
-/// Recovery, however it got there.
-///
-/// `AppStore` is the single source of truth for the numbers themselves —
-/// `WhoopClient` only ever reaches this screen indirectly, by writing into
-/// `state.recovery` through `applyWhoopReading`. What this panel reads
-/// `WhoopClient` for directly is the two things that never get persisted:
-/// whether a connection exists at all, and today's detected workouts, which
-/// the app deliberately never ticks on its own — WHOOP knows you trained, it
-/// doesn't know which items on the checklist you actually did.
-private struct RecoveryPanel: View {
-    var state: LogState
-    @Environment(AppStore.self) private var store
-    @Environment(WhoopClient.self) private var whoop
-
-    private var reading: RecoveryRecord? { state.recovery[state.today] }
-    private var isConnected: Bool { whoop.status == .connected }
-
-    var body: some View {
-        Panel(title: "Recovery", tag: tag) {
-            if isConnected {
-                connectedContent
-            } else {
-                disconnectedContent
-            }
-        }
-    }
-
-    private var tag: String {
-        if let value = reading?.recovery { return "\(value)%" }
-        return isConnected ? "no data yet today" : "not connected"
-    }
-
-    @ViewBuilder
-    private var connectedContent: some View {
-        HStack(spacing: 18) {
-            statColumn(reading?.strain.map { String(format: "%.1f", $0) } ?? "–", label: "strain")
-            statColumn(reading?.sleepPct.map { "\($0)%" } ?? "–", label: "sleep")
-            statColumn(reading?.hrvMs.map { "\(Int($0.rounded()))" } ?? "–", label: "hrv ms")
-            statColumn(reading?.restingHR.map { "\($0)" } ?? "–", label: "rhr")
-        }
-
-        if let workouts = whoop.today?.workouts, !workouts.isEmpty {
-            let complete = state.day(state.today).done.count >= Plan.day(state.todayDow).items.count
-            VStack(alignment: .leading, spacing: 6) {
-                Text("WHOOP recorded " + workouts.map {
-                    ($0.sport ?? "a workout")
-                        + ($0.minutes.map { " · \($0) min" } ?? "")
-                        + ($0.strain.map { " · \(String(format: "%.1f", $0)) strain" } ?? "")
-                }.joined(separator: ", ") + " today.")
-                    .font(Theme.body(13))
-                    .foregroundStyle(Theme.bone)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !complete {
-                    ActionButton(title: "Tick this session") { markTodayComplete() }
-                }
-            }
-        }
-
-        if let value = reading?.recovery, value < Deload.redRecovery {
-            Note("""
-                Recovery is red today. If today's session has any give in it — Thursday's cardio, the \
-                pyramid — this is the day to take it.
-                """)
-        }
-    }
-
-    private func statColumn(_ value: String, label: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(Theme.mono(15, weight: .bold)).foregroundStyle(Theme.bone)
-            Text(label).font(Theme.mono(9)).foregroundStyle(Theme.muted)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func markTodayComplete() {
-        // Explicit tap rather than auto-ticking on detection, matching the
-        // web app's reasoning exactly: WHOOP knows you trained, it doesn't
-        // know which items on the checklist you actually did.
-        for item in Plan.day(state.todayDow).items where !state.day(state.today).done.contains(item.key) {
-            store.toggleItem(item.key, on: state.today)
-        }
-    }
-
-    @ViewBuilder
-    private var disconnectedContent: some View {
-        if case .notConnected(let reason) = whoop.status, let reason {
-            Note(reason, dimmed: true)
-        }
-        ActionButton(title: "Connect WHOOP", prominent: true) { whoop.connect() }
-
-        EntryField(placeholder: "recovery %, if you don't", buttonTitle: "Log", prominent: false,
-                   keyboard: .numberPad) { text in
-            guard let value = Int(text), (0...100).contains(value) else { return false }
-            store.setRecovery(value, on: state.today)
-            return true
-        }
-        if let value = reading?.recovery {
-            HStack {
-                PTag("logged \(value)%")
-                ActionButton(title: "Clear") { store.setRecovery(nil, on: state.today) }
-            }
-        }
-        Note("""
-            Connect WHOOP for this automatically, including the flag on days recovery is low. Or type it \
-            by hand each morning if you wear a different strap — either way, it's what lets the app notice \
-            a bad week and prescribe a deload off your own data rather than off a calendar.
-            """)
-    }
-}
-
 // MARK: - Session
 
 private struct SessionPanel: View {
@@ -428,10 +428,16 @@ private struct SessionPanel: View {
     var canEdit: Bool
     var activeDate: String
     var editingDate: String?
+    /// Only true when this panel is showing today's own session, not a
+    /// preview of another weekday or a back-filled past one — a detected
+    /// workout is inherently today's, so the banner only ever makes sense
+    /// here.
+    var showWorkoutBanner: Bool
     var onBackToToday: () -> Void
 
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
+    @Environment(WhoopClient.self) private var whoop
     @Environment(\.scenePhase) private var scenePhase
     @State private var note = ""
     @State private var noteLoaded = false
@@ -444,6 +450,10 @@ private struct SessionPanel: View {
     var body: some View {
         Panel(title: day.title, tag: tag) {
             Note(day.note)
+
+            if showWorkoutBanner, let workouts = whoop.today?.workouts, !workouts.isEmpty {
+                workoutBanner(workouts)
+            }
 
             ForEach(day.items) { item in
                 let isPyramid = item.key == "sa-pyramid"
@@ -492,6 +502,34 @@ private struct SessionPanel: View {
             if phase != .active { debouncer.flush { flushNote(for: activeDate) } }
         }
         .onDisappear { debouncer.flush { flushNote(for: activeDate) } }
+    }
+
+    private func workoutBanner(_ workouts: [DetectedWorkout]) -> some View {
+        let complete = log.done.count >= day.items.count
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("WHOOP recorded " + workouts.map {
+                ($0.sport ?? "a workout")
+                    + ($0.minutes.map { " · \($0) min" } ?? "")
+                    + ($0.strain.map { " · \(String(format: "%.1f", $0)) strain" } ?? "")
+            }.joined(separator: ", ") + " today.")
+                .font(Theme.body(13))
+                .foregroundStyle(Theme.bone)
+                .fixedSize(horizontal: false, vertical: true)
+            if !complete {
+                ActionButton(title: "Tick this session") { markTodayComplete() }
+            }
+        }
+        .padding(10)
+        .background(Theme.raise, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func markTodayComplete() {
+        // Explicit tap rather than auto-ticking on detection, matching the
+        // web app's reasoning exactly: WHOOP knows you trained, it doesn't
+        // know which items on the checklist you actually did.
+        for item in day.items where !log.done.contains(item.key) {
+            store.toggleItem(item.key, on: activeDate)
+        }
     }
 
     private func load() {
@@ -721,32 +759,6 @@ private struct PyramidPanel: View {
             }
         }
         .padding(.top, 6)
-    }
-}
-
-// MARK: - Body weight
-
-private struct WeightPanel: View {
-    var state: LogState
-    @Environment(AppStore.self) private var store
-
-    var body: some View {
-        Panel(title: "Body weight", tag: "7-day average") {
-            BigStat(value: state.latestAverage.map { String(format: "%.1f", $0) } ?? "–", unit: "kg")
-            VerdictLine(text: Trend.verdictText(state), tone: Trend.verdict(state))
-            Sparkline(values: state.sortedWeights.suffix(30).map(\.kg))
-            EntryField(placeholder: "waist, cm (weekly)", buttonTitle: "Log", prominent: false) { text in
-                guard let cm = Double(text.replacingOccurrences(of: ",", with: ".")),
-                      cm >= 50, cm <= 150 else { return false }
-                store.logWaist(cm: cm, on: state.today)
-                return true
-            }
-            Note("""
-                Weigh in every morning, same conditions. Judge the weekly average, never a single day. \
-                Waist once a week, relaxed, at the navel — scale up with the waist flat is the bulk \
-                working; both climbing together means trim the surplus.
-                """)
-        }
     }
 }
 
