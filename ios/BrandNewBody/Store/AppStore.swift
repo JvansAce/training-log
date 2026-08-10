@@ -224,8 +224,12 @@ final class AppStore {
     // MARK: - Weigh-ins and waist
 
     func logWeight(kg: Double, on date: String) {
-        // The seed placeholder is replaced, not added to.
-        for existing in fetch(WeightEntry.self) where existing.date == date {
+        // The seed placeholder goes the moment there is a real weigh-in — on
+        // any date, not just its own. Deleting it only on a same-day collision
+        // left a fabricated 79 kg sitting in the log forever for anyone whose
+        // first real weigh-in was a day or more after install, dragging the
+        // 28-day trend and the calorie advice with it.
+        for existing in fetch(WeightEntry.self) where existing.date == date || existing.seed {
             context.delete(existing)
         }
         context.insert(WeightEntry(date: date, kg: kg, seed: false))

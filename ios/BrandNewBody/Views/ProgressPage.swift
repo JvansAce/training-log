@@ -354,8 +354,9 @@ struct HeightField: View {
                    buttonTitle: current == nil ? "Set height" : "Update",
                    prominent: current == nil,
                    keyboard: .numberPad) { text in
-            guard let value = Int(text), value >= Build.minHeight, value <= Build.maxHeight else { return }
+            guard let value = Int(text), value >= Build.minHeight, value <= Build.maxHeight else { return false }
             onSet(value)
+            return true
         }
     }
 }

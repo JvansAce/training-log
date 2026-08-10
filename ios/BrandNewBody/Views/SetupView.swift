@@ -152,17 +152,19 @@ struct SetupView: View {
                        buttonTitle: state.birthYear == nil ? "Set year" : "Update",
                        prominent: state.birthYear == nil,
                        keyboard: .numberPad) { text in
-                guard let year = Int(text), let today = DateKit.date(state.today) else { return }
+                guard let year = Int(text), let today = DateKit.date(state.today) else { return false }
                 let thisYear = Calendar.current.component(.year, from: today)
-                guard year >= thisYear - Build.maxAge, year <= thisYear - Build.minAge else { return }
+                guard year >= thisYear - Build.maxAge, year <= thisYear - Build.minAge else { return false }
                 store.setBirthYear(year)
+                return true
             }
             Note("Set once. Year of birth rather than age so it doesn't go stale on your birthday.")
             EntryField(placeholder: "barbell weight, kg (default 20)",
                        buttonTitle: "Set bar", prominent: false) { text in
                 guard let kg = Double(text.replacingOccurrences(of: ",", with: ".")),
-                      kg > 0, kg <= 50 else { return }
+                      kg > 0, kg <= 50 else { return false }
                 store.setBarKg(kg)
+                return true
             }
             Note("The bar the plate maths assumes. \(Lifts.fmt(state.barKg)) kg at the moment.")
         }

@@ -148,8 +148,9 @@ private struct WeighRow: View {
                 prominent: todayEntry == nil
             ) { text in
                 guard let kg = Double(text.replacingOccurrences(of: ",", with: ".")),
-                      kg >= 40, kg <= 200 else { return }
+                      kg >= 40, kg <= 200 else { return false }
                 onLog(kg)
+                return true
             }
             if let todayEntry {
                 PTag("logged \(String(format: "%.1f", todayEntry.kg)) kg", tint: Theme.green)
@@ -332,8 +333,9 @@ private struct RecoveryPanel: View {
             } else {
                 EntryField(placeholder: "recovery %, if you track it",
                            buttonTitle: "Log", prominent: false, keyboard: .numberPad) { text in
-                    guard let value = Int(text) else { return }
+                    guard let value = Int(text), (0...100).contains(value) else { return false }
                     store.setRecovery(value, on: state.today)
+                    return true
                 }
                 Note("""
                     Optional. If you wear a strap that scores recovery, putting the number in each morning \
@@ -610,8 +612,9 @@ private struct WeightPanel: View {
             Sparkline(values: state.sortedWeights.suffix(30).map(\.kg))
             EntryField(placeholder: "waist, cm (weekly)", buttonTitle: "Log", prominent: false) { text in
                 guard let cm = Double(text.replacingOccurrences(of: ",", with: ".")),
-                      cm >= 50, cm <= 150 else { return }
+                      cm >= 50, cm <= 150 else { return false }
                 store.logWaist(cm: cm, on: state.today)
+                return true
             }
             Note("""
                 Weigh in every morning, same conditions. Judge the weekly average, never a single day. \

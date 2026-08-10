@@ -107,7 +107,7 @@ struct TickRow<Detail: View>: View {
 
     init(title: String, subtitle: String? = nil, rir: String? = nil, isOn: Bool,
          enabled: Bool = true, toggle: @escaping () -> Void,
-         @ViewBuilder detail: () -> Detail = { EmptyView() }) {
+         @ViewBuilder detail: () -> Detail) {
         self.title = title
         self.subtitle = subtitle
         self.rir = rir
@@ -154,6 +154,22 @@ struct TickRow<Detail: View>: View {
         }
         .padding(.vertical, 8)
         .opacity(enabled ? 1 : 0.65)
+    }
+}
+
+extension TickRow where Detail == EmptyView {
+    /// The common case: a line with nothing under it.
+    ///
+    /// A constrained extension rather than `detail: () -> Detail = {
+    /// EmptyView() }` on the main initialiser, because a default argument
+    /// cannot bind a generic parameter the caller never mentions — omitting it
+    /// leaves `Detail` uninferrable. There is no ambiguity between the two:
+    /// this one has no `detail` parameter at all, so a call with a trailing
+    /// detail closure can only match the other.
+    init(title: String, subtitle: String? = nil, rir: String? = nil, isOn: Bool,
+         enabled: Bool = true, toggle: @escaping () -> Void) {
+        self.init(title: title, subtitle: subtitle, rir: rir, isOn: isOn,
+                  enabled: enabled, toggle: toggle) { EmptyView() }
     }
 }
 
@@ -371,13 +387,18 @@ struct EntryField: View {
     var buttonTitle: String
     var prominent: Bool
     var keyboard: UIKeyboardType
-    var onCommit: (String) -> Void
+    /// Returns false to reject the entry — out of range, unparseable. The
+    /// field then keeps what was typed instead of clearing it, because
+    /// swallowing a rejected weigh-in looks exactly like a successful one and
+    /// is how a log quietly ends up with a missing morning.
+    var onCommit: (String) -> Bool
 
     @State private var text = ""
+    @State private var rejected = false
     @FocusState private var focused: Bool
 
     init(placeholder: String, buttonTitle: String, prominent: Bool = true,
-         keyboard: UIKeyboardType = .decimalPad, onCommit: @escaping (String) -> Void) {
+         keyboard: UIKeyboardType = .decimalPad, onCommit: @escaping (String) -> Bool) {
         self.placeholder = placeholder
         self.buttonTitle = buttonTitle
         self.prominent = prominent
@@ -395,9 +416,13 @@ struct EntryField: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(Theme.raise, in: RoundedRectangle(cornerRadius: 9))
-                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.line, lineWidth: 1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9)
+                        .stroke(rejected ? Theme.red : Theme.line, lineWidth: 1)
+                )
                 .submitLabel(.done)
                 .onSubmit(commit)
+                .onChange(of: text) { _, _ in rejected = false }
 
             ActionButton(title: buttonTitle, prominent: prominent, action: commit)
         }
@@ -406,7 +431,13 @@ struct EntryField: View {
     private func commit() {
         let value = text.trimmingCharacters(in: .whitespaces)
         guard !value.isEmpty else { return }
-        onCommit(value)
+        guard onCommit(value) else {
+            // Keep the text, mark the field, let them correct it.
+            rejected = true
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            return
+        }
+        rejected = false
         text = ""
         focused = false
     }

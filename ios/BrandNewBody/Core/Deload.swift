@@ -30,7 +30,10 @@ public enum Deload {
 
     /// Scored recovery for the days before today, newest first.
     static func recoveryDays(_ state: LogState, _ count: Int) -> [(date: String, value: Int)] {
-        var out: [(String, Int)] = []
+        // Labelled to match the return type: Swift will not convert
+        // `[(String, Int)]` to `[(date: String, value: Int)]`, because tuple
+        // labels are part of the element type and Array is invariant in it.
+        var out: [(date: String, value: Int)] = []
         for i in 1...count {
             let date = DateKit.adding(-i, to: state.today)
             // A fever tanks recovery for days, and that is the illness, not
