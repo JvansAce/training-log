@@ -208,19 +208,36 @@ public enum Plan {
         return out
     }()
 
+    /// Keyed like the exercises, and for the same reason: mobility ticks used
+    /// to be stored as positions in this list, so inserting a drill silently
+    /// changed what every past tick referred to. That is the exact defect
+    /// session ticks were fixed for in the web app — and never fixed here.
     public struct Mobility: Identifiable, Sendable {
-        public let index: Int
-        public var id: Int { index }
+        public let key: String
+        public var id: String { key }
         public let name: String
         public let prescription: String
     }
 
     public static let mobility: [Mobility] = [
-        .init(index: 0, name: "Deep squat hold", prescription: "2 × 1 min"),
-        .init(index: 1, name: "Couch stretch", prescription: "1 min / side"),
-        .init(index: 2, name: "Shoulder dislocates", prescription: "2 × 10, band or broomstick"),
-        .init(index: 3, name: "Dead hang", prescription: "2 × 30–45s"),
+        .init(key: "mob-squat", name: "Deep squat hold", prescription: "2 × 1 min"),
+        .init(key: "mob-couch", name: "Couch stretch", prescription: "1 min / side"),
+        .init(key: "mob-dislocate", name: "Shoulder dislocates", prescription: "2 × 10, band or broomstick"),
+        .init(key: "mob-hang", name: "Dead hang", prescription: "2 × 30–45s"),
     ]
+
+    /// The drill order as it stood while ticks were positions. **Frozen.** New
+    /// drills go on the end of `mobility`; nothing is ever inserted here, or
+    /// every already-recorded tick would translate to the wrong drill.
+    /// `testMobilityKeysAreStableAndUnique` fails if the two drift apart.
+    private static let legacyMobilityOrder = [
+        "mob-squat", "mob-couch", "mob-dislocate", "mob-hang",
+    ]
+
+    /// Translates an old positional tick, or nil if the position never existed.
+    public static func mobilityKey(legacyIndex index: Int) -> String? {
+        legacyMobilityOrder.indices.contains(index) ? legacyMobilityOrder[index] : nil
+    }
 
     public struct Meal: Identifiable, Sendable {
         public var id: String { heading }

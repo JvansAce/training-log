@@ -310,6 +310,18 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(Pyramid.isVestWeek(state))
     }
 
+    /// Back-filling last Saturday must ask about *last* Saturday's week, not
+    /// this one's, or the recorded pyramid carries the wrong vest parity.
+    func testVestWeekIsJudgedByTheDayBeingLogged() {
+        var state = makeState()
+        state.pyramidCap = 6
+        XCTAssertEqual(state.weeksIn, 13)
+        XCTAssertTrue(Pyramid.isVestWeek(state))                                  // week 13, odd
+        XCTAssertEqual(Pyramid.weekIndex(state, on: DateKit.adding(-7, to: today)), 12)
+        XCTAssertFalse(Pyramid.isVestWeek(state, on: DateKit.adding(-7, to: today)))
+        XCTAssertTrue(Pyramid.isVestWeek(state, on: today))
+    }
+
     func testSuggestedVestScalesWithBodyweight() {
         var state = makeState()
         state.pyramidCap = 6
@@ -657,6 +669,43 @@ final class CoreTests: XCTestCase {
             XCTAssertFalse(Plan.day(dow).items.isEmpty, "no items for day \(dow)")
         }
         XCTAssertEqual(Set(Plan.order), Set(0...6))
+    }
+
+    /// The guard on the mobility migration. Reordering `Plan.mobility` without
+    /// updating the frozen legacy order would translate every already-recorded
+    /// tick to the wrong drill, silently, and this is what catches it.
+    func testMobilityKeysAreStableAndUnique() {
+        XCTAssertEqual(Set(Plan.mobility.map(\.key)).count, Plan.mobility.count)
+        XCTAssertEqual(Plan.mobility.prefix(4).map(\.key),
+                       (0..<4).compactMap { Plan.mobilityKey(legacyIndex: $0) })
+        XCTAssertNil(Plan.mobilityKey(legacyIndex: 4))
+        XCTAssertNil(Plan.mobilityKey(legacyIndex: -1))
+    }
+
+    /// A backup exported while mobility ticks were still positions in the drill
+    /// list has to keep importing — a restore is the one moment you cannot
+    /// afford to throw.
+    func testLegacyMobilityPositionsStillDecode() throws {
+        let json = #"{"done":["su-mob"],"fuelHit":false,"mobility":[0,3],"note":"easy"}"#
+        let record = try JSONDecoder().decode(DayRecord.self, from: Data(json.utf8))
+        XCTAssertEqual(record.mobility, ["mob-squat", "mob-hang"])
+        XCTAssertEqual(record.done, ["su-mob"])
+        XCTAssertEqual(record.note, "easy")
+    }
+
+    func testCurrentMobilityKeysDecodeUnchanged() throws {
+        let json = #"{"done":[],"fuelHit":true,"mobility":["mob-couch"],"note":""}"#
+        let record = try JSONDecoder().decode(DayRecord.self, from: Data(json.utf8))
+        XCTAssertEqual(record.mobility, ["mob-couch"])
+        XCTAssertTrue(record.fuelHit)
+    }
+
+    /// A day record written by this version must read back as itself.
+    func testDayRecordRoundTripsThroughItsOwnEncoder() throws {
+        let original = DayRecord(done: ["tu-row"], fuelHit: true,
+                                 mobility: ["mob-hang", "mob-squat"], note: "note")
+        let data = try JSONEncoder().encode(original)
+        XCTAssertEqual(try JSONDecoder().decode(DayRecord.self, from: data), original)
     }
 
     func testEveryLoggableLiftHasAName() {

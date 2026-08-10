@@ -42,14 +42,39 @@ public struct DayRecord: Codable, Hashable, Sendable {
     /// exercise silently changed what every past tick referred to.
     public var done: Set<String>
     public var fuelHit: Bool
-    public var mobility: Set<Int>
+    /// Mobility drill keys (`mob-hang`) — also keys, for the same reason.
+    public var mobility: Set<String>
     public var note: String
 
-    public init(done: Set<String> = [], fuelHit: Bool = false, mobility: Set<Int> = [], note: String = "") {
+    public init(done: Set<String> = [], fuelHit: Bool = false,
+                mobility: Set<String> = [], note: String = "") {
         self.done = done
         self.fuelHit = fuelHit
         self.mobility = mobility
         self.note = note
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case done, fuelHit, mobility, note
+    }
+
+    /// Hand-written only to read both shapes of `mobility`. A backup exported
+    /// while ticks were still positions in the drill list has to keep
+    /// importing, and a restore is exactly the moment you cannot afford to
+    /// throw. Encoding stays synthesised, so nothing new is ever written in
+    /// the old shape.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        done = (try? container.decode(Set<String>.self, forKey: .done)) ?? []
+        fuelHit = (try? container.decode(Bool.self, forKey: .fuelHit)) ?? false
+        note = (try? container.decode(String.self, forKey: .note)) ?? ""
+        if let keys = try? container.decode(Set<String>.self, forKey: .mobility) {
+            mobility = keys
+        } else if let positions = try? container.decode(Set<Int>.self, forKey: .mobility) {
+            mobility = Set(positions.compactMap { Plan.mobilityKey(legacyIndex: $0) })
+        } else {
+            mobility = []
+        }
     }
 
     public var isEmpty: Bool {

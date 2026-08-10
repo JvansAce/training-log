@@ -372,7 +372,7 @@ private struct SessionPanel: View {
             ForEach(day.items) { item in
                 let isPyramid = item.key == "sa-pyramid"
                 TickRow(
-                    title: isPyramid ? Pyramid.itemName(state) : item.name,
+                    title: isPyramid ? Pyramid.itemName(state, on: activeDate) : item.name,
                     subtitle: isPyramid ? Pyramid.itemPrescription : item.prescription,
                     rir: item.rir,
                     isOn: canEdit && log.done.contains(item.key),
@@ -728,9 +728,9 @@ private struct MobilityPanel: View {
             ForEach(Plan.mobility) { drill in
                 TickRow(title: drill.name,
                         subtitle: drill.prescription,
-                        isOn: canEdit && state.day(activeDate).mobility.contains(drill.index),
+                        isOn: canEdit && state.day(activeDate).mobility.contains(drill.key),
                         enabled: canEdit,
-                        toggle: { store.toggleMobility(drill.index, on: activeDate) })
+                        toggle: { store.toggleMobility(drill.key, on: activeDate) })
             }
         }
     }

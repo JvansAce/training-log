@@ -155,3 +155,51 @@ The prescription string is parsed for progression targets (`4 × 8–10`), so th
 programme text stays the single source of truth rather than being duplicated
 into a table that can drift. Anything that isn't a clean numeric range —
 `4 × max reps` — correctly gets no target.
+
+### What editing the plan does to days already logged
+
+There is no plan versioning: history stores *references* into the plan and is
+rendered through whatever the plan says today. Mostly that is what you want —
+fix a typo and it is fixed everywhere — but it means some edits rewrite the
+past. **Treat `key` and `liftID` as permanent identifiers and you are safe.**
+
+Free to change:
+
+- **Renaming** an exercise, its note, tag or prescription. The key is unchanged,
+  so past ticks still bind; the past day simply displays the new text.
+- **Adding** an exercise. Past days show it unticked, but a completed session is
+  decided by *how many* items were ticked, not which, so nothing is
+  de-certified.
+- **Removing** one. Its past ticks become invisible orphans but still count, so
+  past sessions stay certified.
+
+Rewrites the past:
+
+- **Changing an item's `key`** — every past tick for it orphans and it reads as
+  never done.
+- **Changing a `liftID`** — the whole per-set history detaches and the lift reads
+  as never trained. (Two exercises *sharing* an id merge their histories, which
+  is what `lat` and `calf` do deliberately.)
+- **Growing a short day past three items** — `Consistency.sessionNeed` is
+  `min(3, items.count)`, so Thursday's two items mean two ticks complete it. Add
+  two more and the bar becomes three, and every past Thursday with exactly two
+  ticks retroactively stops counting — which can break a green streak already
+  banked. The only edit here that can take something away from the user.
+- **Reordering `MindPlan.practices`** — `mindUnlocked` is a count, so inserting
+  mid-list changes which practices someone has, and the adherence gate
+  recomputes over the new set against old logs.
+- **Reordering `MindPlan.charisma` or `MindPlan.ladder`** — drill and rung ticks
+  are keyed by position (`chr7`, `rung3`), so inserting one re-points history at
+  a different technique. Append, don't insert.
+
+Two things are immune. The **pyramid** snapshots the cap and vest load in force
+when it was ticked, so its history survives any later change to the rules. And
+the **weight trend, fuel maths, build targets, deloads and time off** never read
+the plan at all — though note `Fuel.basis` hardcodes rest days as day 0 and 4,
+so moving the rest day in `Plan` would not move the calorie target with it.
+
+`Plan.mobility` used to be the exception — its ticks were stored as positions,
+so inserting a drill silently re-pointed every past tick. It is keyed now, with
+`Plan.mobilityKey(legacyIndex:)` translating anything already recorded, and
+`testMobilityKeysAreStableAndUnique` fails if the frozen legacy order and the
+live list ever drift apart.

@@ -59,17 +59,26 @@ public enum Pyramid {
     /// volume yet.
     public static let vestFromCap = 6
 
+    /// Which programme week a date falls in. Taken from the date rather than
+    /// from `today`, so back-filling last Saturday asks about *last* Saturday's
+    /// week rather than this one's.
+    public static func weekIndex(_ state: LogState, on date: String) -> Int {
+        guard let n = DateKit.days(from: state.startDate, to: date) else { return state.weeksIn }
+        return max(0, n / 7)
+    }
+
     /// `vestPhase` only flips which parity carries the vest, for when the real
     /// schedule drifts out of step with the counter.
-    public static func isVestWeek(_ state: LogState) -> Bool {
-        state.pyramidCap >= vestFromCap && ((state.weeksIn + state.vestPhase) % 2) == 1
+    public static func isVestWeek(_ state: LogState, on date: String? = nil) -> Bool {
+        let week = date.map { weekIndex(state, on: $0) } ?? state.weeksIn
+        return state.pyramidCap >= vestFromCap && ((week + state.vestPhase) % 2) == 1
     }
 
     /// The pyramid line as it appears on Saturday's checklist, with the cap
     /// and — on a vest week — the load folded into the name.
-    public static func itemName(_ state: LogState) -> String {
+    public static func itemName(_ state: LogState, on date: String? = nil) -> String {
         var name = "Holland pyramid — rounds 1–\(state.pyramidCap)"
-        if isVestWeek(state), let v = vestKg(state) {
+        if isVestWeek(state, on: date), let v = vestKg(state) {
             name += " · vest \(String(format: "%.1f", v)) kg"
         }
         return name

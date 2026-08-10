@@ -30,9 +30,28 @@ final class AppStore {
         self.context = context
         self.cloudStatus = cloudStatus
         self.state = LogState()
+        migrateMobilityIndices()
         reload()
         seedIfNeeded()
         observeRemoteChanges()
+    }
+
+    // MARK: - Migration
+
+    /// Mobility ticks used to be positions in the drill list, so inserting a
+    /// drill silently changed what every past tick referred to — the same
+    /// defect session ticks were fixed for by moving to keys. Translated once
+    /// through the frozen legacy order and written back, so this never runs
+    /// again and no already-recorded tick is lost.
+    private func migrateMobilityIndices() {
+        var changed = false
+        for entry in fetch(DayEntry.self) where !entry.mobilityIndices.isEmpty {
+            let translated = entry.mobilityIndices.compactMap { Plan.mobilityKey(legacyIndex: $0) }
+            entry.mobilityKeys = Set(entry.mobilityKeys).union(translated).sorted()
+            entry.mobilityIndices = []
+            changed = true
+        }
+        if changed { save() }
     }
 
     // MARK: - Reading
@@ -177,8 +196,12 @@ final class AppStore {
         // history says "cap 6 + 5 kg" rather than just "done".
         if key == "sa-pyramid" {
             if record.done.contains(key) {
+                // Judged on the day being logged, not today, so back-filling
+                // last Saturday doesn't stamp this week's vest parity onto it.
+                // The cap is still the current one — there is no record of what
+                // it was a fortnight ago, and inventing one would be worse.
                 upsertPyramid(date: date, cap: state.pyramidCap,
-                              vestKg: Pyramid.isVestWeek(state) ? Pyramid.vestKg(state) : nil)
+                              vestKg: Pyramid.isVestWeek(state, on: date) ? Pyramid.vestKg(state) : nil)
             } else {
                 deletePyramid(date: date)
             }
@@ -192,10 +215,10 @@ final class AppStore {
         commit(entry)
     }
 
-    func toggleMobility(_ index: Int, on date: String) {
+    func toggleMobility(_ key: String, on date: String) {
         let entry = dayEntry(date)
         var record = entry.record
-        if record.mobility.contains(index) { record.mobility.remove(index) } else { record.mobility.insert(index) }
+        if record.mobility.contains(key) { record.mobility.remove(key) } else { record.mobility.insert(key) }
         entry.apply(record)
         commit(entry)
     }

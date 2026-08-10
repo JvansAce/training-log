@@ -59,6 +59,11 @@ final class DayEntry {
     /// Item keys such as `tu-row`, never indices into the day's list.
     var doneKeys: [String] = []
     var fuelHit: Bool = false
+    var mobilityKeys: [String] = []
+    /// Mobility ticks as they were once stored: positions in the drill list.
+    /// Read once by `AppStore.migrateMobilityIndices()` and then emptied — kept
+    /// in the schema so an existing install's ticks survive the change rather
+    /// than being silently dropped on first launch.
     var mobilityIndices: [Int] = []
     var note: String = ""
 
@@ -68,17 +73,19 @@ final class DayEntry {
 
     var record: DayRecord {
         DayRecord(done: Set(doneKeys), fuelHit: fuelHit,
-                  mobility: Set(mobilityIndices), note: note)
+                  mobility: Set(mobilityKeys), note: note)
     }
 
     func apply(_ record: DayRecord) {
         doneKeys = record.done.sorted()
         fuelHit = record.fuelHit
-        mobilityIndices = record.mobility.sorted()
+        mobilityKeys = record.mobility.sorted()
         note = record.note
     }
 
-    var isEmpty: Bool { record.isEmpty }
+    /// Legacy ticks count as content, so an un-migrated row is never mistaken
+    /// for a blank one and deleted before it can be translated.
+    var isEmpty: Bool { record.isEmpty && mobilityIndices.isEmpty }
 }
 
 @Model
