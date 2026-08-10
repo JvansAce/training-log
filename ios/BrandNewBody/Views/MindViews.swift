@@ -25,7 +25,7 @@ struct MindTodayView: View {
                 ActionButton(title: "Start the programme", prominent: true) { store.startMind() }
             }
         } else {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 Panel(title: "Today",
                       tag: "\(Plan.dayNames[state.todayDow] ?? "") · week \(Mind.weeksIn(state) + 1)") {
                     Note(intro)
@@ -64,10 +64,23 @@ private struct PracticeRow: View {
     var practice: MindPlan.Practice
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var minutes = ""
     @State private var journal = ""
     @State private var loaded = false
+    // Mind has no back-fill — every write here targets `state.today` — so
+    // unlike the Body side's LiftRow and note field, these two debouncers
+    // don't need to track which day a pending edit belongs to, only whether
+    // there is one.
+    @State private var minutesDebouncer = Debouncer()
+    @State private var journalDebouncer = Debouncer()
+    // Set only inside each field's own onChange, so flushing on disappear or
+    // backgrounding — which happens on every visit, touched or not — doesn't
+    // write back the exact value that was just loaded and call that a
+    // mutation.
+    @State private var minutesDirty = false
+    @State private var journalDirty = false
 
     private var state: LogState { store.state }
     private var log: MindDayRecord { state.mindDay(state.today) }
@@ -82,15 +95,37 @@ private struct PracticeRow: View {
                 minutesDetail
             case .text:
                 TextEditorField(text: $journal, placeholder: "Write it here — a few lines is plenty.")
-                    .onChange(of: journal) { _, new in
+                    .onChange(of: journal) { _, _ in
                         guard loaded else { return }
-                        store.setJournal(new, on: state.today)
+                        journalDirty = true
+                        journalDebouncer.schedule { commitJournal() }
                     }
             default:
                 EmptyView()
             }
         }
         .onAppear(perform: load)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active else { return }
+            minutesDebouncer.flush { commitMinutes() }
+            journalDebouncer.flush { commitJournal() }
+        }
+        .onDisappear {
+            minutesDebouncer.flush { commitMinutes() }
+            journalDebouncer.flush { commitJournal() }
+        }
+    }
+
+    private func commitMinutes() {
+        guard minutesDirty else { return }
+        minutesDirty = false
+        store.setMindMinutes(Int(minutes), practice: practice.key, on: state.today)
+    }
+
+    private func commitJournal() {
+        guard journalDirty else { return }
+        journalDirty = false
+        store.setJournal(journal, on: state.today)
     }
 
     @ViewBuilder
@@ -107,9 +142,10 @@ private struct PracticeRow: View {
                     .padding(.vertical, 8)
                     .background(Theme.raise, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
-                    .onChange(of: minutes) { _, new in
+                    .onChange(of: minutes) { _, _ in
                         guard loaded else { return }
-                        store.setMindMinutes(Int(new), practice: practice.key, on: state.today)
+                        minutesDirty = true
+                        minutesDebouncer.schedule { commitMinutes() }
                     }
                 Text("of \(target)")
                     .font(Theme.mono(11))
@@ -363,7 +399,7 @@ struct MindWeekView: View {
     var body: some View {
         let active = Mind.activePractices(state)
 
-        VStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 14) {
             Panel(title: "The week", tag: "last 7 days") {
                 ForEach(Plan.order, id: \.self) { dow in
                     let date = DateKit.adding(-((state.todayDow - dow + 7) % 7), to: state.today)
@@ -436,7 +472,7 @@ struct MindProgressView: View {
         let streaks = Mind.streaks(state)
         let journalDays = Mind.journalDays(state)
 
-        VStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 14) {
             Panel(title: "Consistency", tag: "last 28 days") {
                 MacroGrid(items: [
                     .init(value: adherence.map { "\(Int(($0.rate * 100).rounded()))" } ?? "–",

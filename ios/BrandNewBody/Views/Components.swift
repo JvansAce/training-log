@@ -157,6 +157,48 @@ struct TickRow<Detail: View>: View {
     }
 }
 
+/// Delays a store write until typing pauses.
+///
+/// Every mutation on `AppStore` ends in `reload()`, which re-fetches all ten
+/// SwiftData model types to rebuild `LogState` from scratch — cheap for a
+/// button tap, not cheap fired once per character. A text field wired
+/// straight to `onChange` does exactly that: typing a paragraph into the
+/// journal, or a rep count into a set, was triggering a full reload on every
+/// keystroke. This holds a single cancellable `Task` so only the last
+/// keystroke in a burst survives to actually write.
+///
+/// Deliberately dumb about *what* it's debouncing — callers own the "is
+/// there really something pending" check (usually "does this loaded value
+/// still belong to the date I'm about to write to"), because that's specific
+/// to each field and this only needs to manage timing.
+@MainActor
+final class Debouncer {
+    private var task: Task<Void, Never>?
+    private let delayMilliseconds: Int
+
+    init(delayMilliseconds: Int = 450) {
+        self.delayMilliseconds = delayMilliseconds
+    }
+
+    func schedule(_ action: @escaping () -> Void) {
+        task?.cancel()
+        task = Task {
+            try? await Task.sleep(for: .milliseconds(delayMilliseconds))
+            guard !Task.isCancelled else { return }
+            action()
+        }
+    }
+
+    /// Cancels whatever was pending and runs `action` immediately — for
+    /// leaving a field, backgrounding the app, or anything else that can't
+    /// wait out the debounce window.
+    func flush(_ action: () -> Void) {
+        task?.cancel()
+        task = nil
+        action()
+    }
+}
+
 extension TickRow where Detail == EmptyView {
     /// The common case: a line with nothing under it.
     ///

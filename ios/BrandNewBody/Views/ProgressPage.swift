@@ -8,7 +8,7 @@ struct ProgressPage: View {
     private var state: LogState { store.state }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 14) {
             thisWeek
             bodyWeight
             BuildPanel(state: state)
@@ -90,9 +90,8 @@ struct ProgressPage: View {
                                     Text("\(String(format: "%.1f", record.kg)) kg")
                                         .font(Theme.body(13, weight: .bold))
                                         .foregroundStyle(Theme.bone)
-                                    Button { store.deleteWeight(on: record.date) } label: {
+                                    Button(role: .destructive) { store.deleteWeight(on: record.date) } label: {
                                         Image(systemName: "xmark.circle.fill")
-                                            .foregroundStyle(Theme.muted)
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityLabel("Delete weigh-in for \(record.date)")

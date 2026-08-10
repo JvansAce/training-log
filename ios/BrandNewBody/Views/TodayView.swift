@@ -20,7 +20,7 @@ struct TodayView: View {
     private var activeDate: String { editingDate ?? state.today }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 14) {
             Spine(state: state, viewing: viewingDow) { viewing = $0; editingDate = nil }
 
             backfillRow
@@ -432,8 +432,11 @@ private struct SessionPanel: View {
 
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
+    @Environment(\.scenePhase) private var scenePhase
     @State private var note = ""
     @State private var noteLoaded = false
+    @State private var noteLoadedFor = ""
+    @State private var debouncer = Debouncer()
 
     private var day: TrainingDay { Plan.day(dow) }
     private var log: DayRecord { state.day(activeDate) }
@@ -468,9 +471,9 @@ private struct SessionPanel: View {
 
             if canEdit {
                 TextEditorField(text: $note, placeholder: "Notes for this session (optional)")
-                    .onChange(of: note) { _, new in
+                    .onChange(of: note) { _, _ in
                         guard noteLoaded else { return }
-                        store.setNote(new, on: activeDate)
+                        scheduleNoteCommit()
                     }
             } else if !log.note.isEmpty {
                 Note("Note: \(log.note)")
@@ -481,13 +484,31 @@ private struct SessionPanel: View {
             }
         }
         .onAppear { load() }
-        .onChange(of: activeDate) { _, _ in load() }
+        .onChange(of: activeDate) { old, _ in
+            debouncer.flush { flushNote(for: old) }
+            load()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { debouncer.flush { flushNote(for: activeDate) } }
+        }
+        .onDisappear { debouncer.flush { flushNote(for: activeDate) } }
     }
 
     private func load() {
         noteLoaded = false
         note = state.day(activeDate).note
+        noteLoadedFor = activeDate
         noteLoaded = true
+    }
+
+    private func scheduleNoteCommit() {
+        let date = activeDate
+        debouncer.schedule { flushNote(for: date) }
+    }
+
+    private func flushNote(for date: String) {
+        guard noteLoadedFor == date else { return }
+        store.setNote(note, on: date)
     }
 
     private var tag: String {
@@ -509,8 +530,10 @@ private struct LiftRow: View {
     var activeDate: String
 
     @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var drafts: [DraftSet] = []
     @State private var loadedFor = ""
+    @State private var debouncer = Debouncer()
 
     struct DraftSet: Identifiable, Equatable {
         let id = UUID()
@@ -562,8 +585,24 @@ private struct LiftRow: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear { load() }
-        .onChange(of: activeDate) { _, _ in load() }
-        .onChange(of: drafts) { _, _ in commit() }
+        .onChange(of: activeDate) { old, _ in
+            // Whatever was pending for the day being left has to land before
+            // switching — `flush`'s own `loadedFor == date` guard would
+            // otherwise silently drop it, since `activeDate` here is already
+            // the new value by the time this fires, which is exactly why the
+            // old one is passed in explicitly rather than read fresh.
+            debouncer.flush { flush(for: old) }
+            load()
+        }
+        .onChange(of: drafts) { _, _ in scheduleCommit() }
+        .onChange(of: scenePhase) { _, phase in
+            // A rep count typed and immediately followed by backgrounding the
+            // app — switching to a stopwatch mid-set is a real gym habit, not
+            // an edge case — must not lose the debounce window it was sitting
+            // in when the app was suspended.
+            if phase != .active { debouncer.flush { flush(for: activeDate) } }
+        }
+        .onDisappear { debouncer.flush { flush(for: activeDate) } }
     }
 
     private func numberField(_ placeholder: String, text: Binding<String>) -> some View {
@@ -594,14 +633,27 @@ private struct LiftRow: View {
             : existing.map { DraftSet(kg: $0.kg.map(Lifts.fmt) ?? "", reps: String($0.reps)) }
     }
 
-    private func commit() {
-        guard loadedFor == activeDate else { return }
+    /// Local `drafts` already updated the instant the keystroke landed —
+    /// this only delays when that becomes a store mutation, so typing stays
+    /// responsive while the expensive part happens once per pause rather
+    /// than once per key.
+    private func scheduleCommit() {
+        let date = activeDate
+        debouncer.schedule { flush(for: date) }
+    }
+
+    /// The actual write, for a specific date rather than reading `activeDate`
+    /// fresh — the caller may be flushing a day that's no longer the active
+    /// one (switching away, or the app backgrounding) and has to name which
+    /// day's edit it's rescuing.
+    private func flush(for date: String) {
+        guard loadedFor == date else { return }
         let sets = drafts.compactMap { draft -> LiftSet? in
             guard let reps = Int(draft.reps), reps > 0 else { return nil }
             let kg = Double(draft.kg.replacingOccurrences(of: ",", with: "."))
             return LiftSet(kg: (kg ?? 0) > 0 ? kg : nil, reps: reps)
         }
-        store.setSets(sets, liftID: liftID, on: activeDate)
+        store.setSets(sets, liftID: liftID, on: date)
     }
 }
 

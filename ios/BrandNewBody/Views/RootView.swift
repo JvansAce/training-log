@@ -20,6 +20,19 @@ enum Tab: String, CaseIterable, Identifiable {
     }
 }
 
+/// A real `TabView`, not a hand-drawn bar.
+///
+/// This is the one change that costs nothing and buys the most: a standard
+/// `TabView` picks up whatever tab bar the OS it's running on actually
+/// draws — the floating, scroll-minimizing glass bar on iOS 26, the classic
+/// opaque one on older versions — with no version-specific code on this
+/// side at all. The system control has always worked this way; that's the
+/// entire point of using one instead of redrawing it by hand.
+///
+/// Each tab owns its own `NavigationStack`, which is what turns "Today" from
+/// a giant custom wordmark sitting above the content into an actual
+/// navigation bar title — the thing the platform expects to find there, and
+/// the detail that most says "native" versus "web page in a box."
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
@@ -34,24 +47,32 @@ struct RootView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Theme.ink.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Masthead(programme: programme, tab: tab) { programme = $0 }
-                        page
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 24)
+        TabView(selection: $tab) {
+            ForEach(Tab.allCases) { entry in
+                NavigationStack {
+                    content(for: entry)
+                        .navigationTitle(entry.title)
+                        .navigationBarTitleDisplayMode(.large)
+                        .toolbar { programmeToolbar(for: entry) }
+                        // Setup is a native Form and wants the system's own
+                        // grouped background; every other tab still carries
+                        // the app's brand fill behind its card panels, which
+                        // none of them paint themselves — they always
+                        // depended on this container providing it.
+                        .background(entry == .setup ? Color.clear : Theme.ink)
                 }
-                .scrollDismissesKeyboard(.interactively)
-
-                if timer.isRunning { RestTimerBar() }
-
-                TabBar(selection: $tab)
+                .tabItem { Label(entry.title, systemImage: entry.symbol) }
+                .tag(entry)
             }
+        }
+        // The standard trick for a persistent bar that floats above the tab
+        // bar rather than under it — the same mechanism apps use for a
+        // "now playing" strip. `.overlay` would sit on top of content
+        // without making room for it; this reserves the space properly, and
+        // it's on the TabView itself so the timer survives a tab switch
+        // exactly like the global state backing it already does.
+        .safeAreaInset(edge: .bottom) {
+            if timer.isRunning { RestTimerBar() }
         }
         .animation(.snappy(duration: 0.2), value: timer.isRunning)
         .task {
@@ -68,12 +89,29 @@ struct RootView: View {
     }
 
     @ViewBuilder
-    private var page: some View {
-        // Setup is shared: it is configuration for the app, not for one of the
-        // two programmes.
+    private func content(for tab: Tab) -> some View {
+        // Setup is a Form and scrolls itself — wrapping it in another
+        // ScrollView would nest two scroll surfaces inside one another,
+        // which is exactly the kind of thing that reads as broken rather
+        // than merely inelegant.
         if tab == .setup {
             SetupView()
-        } else if programme == .body {
+        } else {
+            ScrollView {
+                pageBody(for: tab)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+    }
+
+    @ViewBuilder
+    private func pageBody(for tab: Tab) -> some View {
+        // Setup is shared: it is configuration for the app, not for one of
+        // the two programmes, so it never reads `programme`. It's also
+        // handled above before this is ever called.
+        if programme == .body {
             switch tab {
             case .today: TodayView()
             case .week: WeekView()
@@ -89,89 +127,26 @@ struct RootView: View {
             }
         }
     }
-}
 
-private struct Masthead: View {
-    @Environment(AppStore.self) private var store
-    var programme: Programme
-    var tab: Tab
-    var onSwitch: (Programme) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(eyebrow.uppercased())
-                .font(Theme.mono(10))
-                .tracking(2.2)
-                .foregroundStyle(Theme.muted)
-
-            (Text("BRAND\nNEW ").foregroundStyle(Theme.bone)
-             + Text(programme.title.uppercased()).foregroundStyle(Theme.red))
-                .font(Theme.display(46))
-                .lineSpacing(-8)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 4) {
-                ForEach(Programme.allCases) { option in
-                    Button { onSwitch(option) } label: {
-                        Text(option.title.uppercased())
-                            .font(Theme.mono(10, weight: option == programme ? .bold : .regular))
-                            .tracking(1.6)
-                            .foregroundStyle(option == programme ? Theme.bone : Theme.muted)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(option == programme ? Theme.red : .clear,
-                                        in: RoundedRectangle(cornerRadius: 8))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(option == programme ? .clear : Theme.line, lineWidth: 1)
-                            )
+    /// The Body/Mind switch, replacing what the old masthead's row of two
+    /// buttons did — as a toolbar item now, because that's where a
+    /// same-screen mode switch belongs, not stacked above the content like
+    /// another block of the page.
+    @ToolbarContentBuilder
+    private func programmeToolbar(for tab: Tab) -> some ToolbarContent {
+        if tab != .setup {
+            ToolbarItem(placement: .topBarTrailing) {
+                Picker("Programme", selection: Binding(
+                    get: { programme },
+                    set: { programme = $0 }
+                )) {
+                    ForEach(Programme.allCases) { option in
+                        Text(option.title).tag(option)
                     }
-                    .buttonStyle(.plain)
                 }
+                .pickerStyle(.segmented)
+                .fixedSize()
             }
         }
-        .padding(.top, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var eyebrow: String {
-        let state = store.state
-        var parts: [String] = []
-        if let date = DateKit.date(state.today) {
-            parts.append(date.formatted(.dateTime.weekday(.wide).day().month(.wide)))
-        }
-        parts.append("week \(state.weeksIn + 1)")
-        if let kind = TimeOff.today(state) { parts.append(kind.label) }
-        return parts.joined(separator: " · ")
-    }
-}
-
-private struct TabBar: View {
-    @Binding var selection: Tab
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Tab.allCases) { tab in
-                Button { selection = tab } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: tab.symbol)
-                            .font(.system(size: 16, weight: .semibold))
-                        Text(tab.title.uppercased())
-                            .font(Theme.mono(8.5))
-                            .tracking(1.2)
-                    }
-                    .foregroundStyle(selection == tab ? Theme.bone : Theme.muted)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selection == tab ? [.isSelected] : [])
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.top, 6)
-        .background(Theme.slate)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 }
