@@ -3,6 +3,8 @@ import * as whoopAuthorize from '../functions/api/whoop/authorize.js';
 import * as whoopCallback from '../functions/api/whoop/callback.js';
 import * as whoopToday from '../functions/api/whoop/today.js';
 import * as whoopDisconnect from '../functions/api/whoop/disconnect.js';
+import * as whoopExchange from '../functions/api/whoop/exchange.js';
+import * as whoopRefresh from '../functions/api/whoop/refresh.js';
 
 const routes = {
   'GET /api/state': state.onRequestGet,
@@ -13,6 +15,8 @@ const routes = {
   'GET /api/whoop/callback': whoopCallback.onRequestGet,
   'GET /api/whoop/today': whoopToday.onRequestGet,
   'POST /api/whoop/disconnect': whoopDisconnect.onRequestPost,
+  'POST /api/whoop/exchange': whoopExchange.onRequestPost,
+  'POST /api/whoop/refresh': whoopRefresh.onRequestPost,
 };
 
 export default {
