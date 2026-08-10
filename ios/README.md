@@ -96,6 +96,51 @@ Production in the [CloudKit Console](https://icloud.developer.apple.com) —
 a TestFlight or App Store build against an undeployed schema syncs nothing and
 reports no error, which is the single most common way this goes wrong.
 
+## Getting to TestFlight
+
+Needs a paid Apple Developer Program membership — TestFlight isn't available on
+a free account, and neither is the iCloud capability.
+
+1. **Team.** Signing & Capabilities → Team. `DEVELOPMENT_TEAM` is empty in the
+   project on purpose.
+2. **iCloud container.** + Capability → iCloud → tick CloudKit → **+** under
+   Containers → `iCloud.<your bundle id>`. Xcode registers it and wires up the
+   App ID. Update `BrandNewBody/BrandNewBody.entitlements` if you chose a
+   different identifier — a mismatch fails at *signing* time, not build time,
+   which makes it confusing to diagnose. Container identifiers are permanent and
+   globally unique, so don't type a throwaway name.
+3. **Push Notifications** (optional). Without it sync still works, it just
+   catches up when the app opens rather than arriving while the phone is in your
+   pocket. `UIBackgroundModes: remote-notification` is already declared, and is a
+   no-op until this capability exists.
+4. **Deploy the CloudKit schema to Production.** ← the one that will bite you.
+5. App Store Connect → new app record → answer **App Privacy** (this app is
+   genuinely "Data Not Collected": nothing leaves the device except to the
+   user's own iCloud, and there are no third-party SDKs).
+6. Destination **Any iOS Device (arm64)** → Product → Archive → Distribute App →
+   App Store Connect → Upload. Bump `CURRENT_PROJECT_VERSION` every upload;
+   build numbers can't repeat within a version.
+7. Internal testers (up to 100, on your team) need no review and can install as
+   soon as processing finishes. External testers need Beta App Review on the
+   first build.
+
+### Why step 4 is the one that bites
+
+TestFlight and App Store builds talk to the **production** CloudKit
+environment; debug builds talk to **development**. They hold separate schemas.
+A TestFlight build against an undeployed production schema **syncs nothing and
+reports no error** — it simply looks as though the app lost the data that is
+sitting on your other device.
+
+So: run once in Debug on a real device so SwiftData creates the record types,
+then [CloudKit Console](https://icloud.developer.apple.com) → your container →
+**Deploy Schema Changes** → Development → Production. Repeat this every time you
+add a `@Model` or a property to one.
+
+`INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` is already set, so the export
+compliance question won't be asked on each upload. It is accurate: the app uses
+only Apple's own crypto, via CloudKit.
+
 ## Tests
 
 `⌘U`, or:

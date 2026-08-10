@@ -1,0 +1,38 @@
+# Xcode — per-user state, not project state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode build products and indexes
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+
+# Signing material — must never be committed
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.cer
+*.certSigningRequest
+
+# Fastlane, if it ever shows up
+fastlane/report.xml
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Node (the web app's dev dependencies)
+node_modules/
+
+# macOS
+.DS_Store
