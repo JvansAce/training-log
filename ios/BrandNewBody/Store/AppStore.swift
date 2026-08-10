@@ -367,6 +367,26 @@ final class AppStore {
         reload()
     }
 
+    /// Writes every field WHOOP scored in one call. Kept separate from
+    /// `setRecovery(_:on:)` above rather than unifying the two: manual entry
+    /// only ever produces a percentage, so a single method covering both
+    /// shapes would mean every manual save silently nulled out strain, sleep,
+    /// HRV and resting heart rate that a prior WHOOP sync had written for the
+    /// same day.
+    func applyWhoopReading(_ reading: RecoveryRecord, on date: String) {
+        guard !reading.isEmpty else { return }
+        let entry: RecoveryEntry
+        if let found = fetch(RecoveryEntry.self).first(where: { $0.date == date }) {
+            entry = found
+        } else {
+            entry = RecoveryEntry(date: date)
+            context.insert(entry)
+        }
+        entry.apply(reading)
+        save()
+        reload()
+    }
+
     // MARK: - Time off
 
     func setOff(_ kind: OffKind?, on date: String) {

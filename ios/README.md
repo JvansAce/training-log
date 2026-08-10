@@ -27,8 +27,9 @@ BrandNewBody/
   Core/                    pure functions over one value type — no UI, no database
   Plan/                    the programme as data: schedule, practices, drills
   Store/                   SwiftData models, the CloudKit container, AppStore
+  Whoop/                   OAuth, PKCE, Keychain, WHOOP's API — no health data touches Store
   Views/                   SwiftUI
-BrandNewBodyTests/         the maths, ~70 cases
+BrandNewBodyTests/         the maths, plus WHOOP's PKCE and date-matching logic
 ```
 
 The important line is between `Core` and everything else. Every derived number
@@ -161,14 +162,13 @@ build targets, and the Mind unlock gate.
 
 Faithful except where the platform forced a decision:
 
-- **WHOOP is gone.** Its OAuth flow needed a server to hold the client secret
-  and rotate refresh tokens, and this app has no server. Recovery is a number
-  you type on Today. Everything downstream — the deload signal, the recovery
-  chart — is unchanged, because it only ever read a percentage out of the
-  record. Bringing WHOOP back means either a small backend or a switch to
-  HealthKit; nothing else would have to move.
-- **Cloudflare Access and the sync API are gone**, replaced by iCloud. So are
-  the tombstones and the server-side merge, for the reason above.
+- **WHOOP connects, but not through Cloudflare Access.** It's real OAuth
+  against WHOOP, not a manual field — see **WHOOP** below for the shape of it
+  and what you need to configure. Manual entry is still there underneath as a
+  fallback for anyone without a WHOOP.
+- **Cloudflare Access and the sync API are gone**, replaced by iCloud, except
+  for the two narrow WHOOP endpoints described below. So are the tombstones
+  and the server-side merge, for the reason above.
 - **The service worker, the version banner and the install prompt are gone.**
   The App Store is the update mechanism now.
 - **Two charts were redrawn**, not restyled. The web version coloured a week
@@ -184,6 +184,71 @@ Faithful except where the platform forced a decision:
   light mode would be a different design, not a recolouring.
 - **The app icon is rendered from `icon.svg`** at 1024px by
   `scripts/render_icon.py`, so the two versions carry the same mark.
+
+## WHOOP
+
+WHOOP's OAuth is a confidential-client flow: exchanging a code (or a refresh
+token) for an access token needs `WHOOP_CLIENT_SECRET`, and that secret must
+never ship inside an app binary — anyone could extract it and impersonate this
+app to WHOOP. So a server is unavoidable for that one step. What it doesn't
+need to be is the *same* server the web app uses, protected the *same* way.
+
+**The split.** Two new, narrow, stateless Cloudflare Pages Functions —
+`functions/api/whoop/exchange.js` and `functions/api/whoop/refresh.js` — exist
+for exactly the calls that need the secret. They hold no D1 row and don't call
+`identify()`; unlike every other function in `functions/api/`, they don't know
+or care who's asking. Every actual data read — recovery, cycle, sleep,
+workout — goes device-to-WHOOP directly from the app with the access token, so
+no health data passes through anything this project runs, only the tokens do,
+and only at connect and refresh time. Tokens themselves live in iCloud
+Keychain (`Whoop/KeychainStore.swift`), not in SwiftData — a credential belongs
+in the platform's credential store, not alongside training logs.
+
+**The redirect.** `ASWebAuthenticationSession` opens WHOOP's consent page and
+catches the return via a custom URL scheme
+(`Whoop/WhoopClient.swift` + the app's `Info.plist`), protected with **PKCE**
+(`Whoop/PKCE.swift`). This isn't the more obvious-looking choice — Universal
+Links, verified against a domain you own, sound like the safer redirect — but
+RFC 8252 is specific about why that's not actually where the safety comes
+from: a private-use scheme *can* be registered by more than one app, so PKCE,
+not domain ownership, is what makes an intercepted authorization code useless
+to whoever intercepted it. Universal Links add real setup cost (Associated
+Domains, a hosted `apple-app-site-association` file, `webcredentials`) for a
+marginal gain once PKCE is already doing the actual work.
+
+### Setup
+
+1. **Carve the two endpoints out of Cloudflare Access.** Access fronts the
+   whole hostname the web app is deployed to, and it authenticates *browser
+   sessions* — a native app calling `/api/whoop/exchange` directly gets
+   Access's login page back instead of JSON, which looks exactly like a WHOOP
+   problem and isn't one. Zero Trust → your Access application → Policies →
+   add a **Bypass** policy scoped to `/api/whoop/exchange` and
+   `/api/whoop/refresh`.
+2. **Register the app's redirect URI on the WHOOP developer dashboard**,
+   alongside the web app's `https://…/api/whoop/callback` —
+   `de.playace.brandnewbody.whoop://callback`. Most dashboards accept more
+   than one redirect URI per app; if yours doesn't, this needs its own WHOOP
+   developer app and its own client ID/secret pair, set as a second
+   environment variable pair on the Pages project.
+3. **Fill in `ios/BrandNewBody/Whoop/WhoopConfig.swift`** — `workerBaseURL`
+   (where the Pages project is deployed) and `clientID` (the same value as
+   `WHOOP_CLIENT_ID`, not a secret — it's already public in the authorize
+   URL). Connect WHOOP stays disabled with a clear message in Setup until
+   both are real values.
+4. Optional: set `WHOOP_APP_TOKEN` on the Pages project and the same string as
+   `WhoopConfig.appToken`, to require a shared header on the two endpoints.
+
+### The residual risk, stated plainly
+
+Because the two endpoints don't check identity, someone could call them with
+an authorization code they separately obtained by going through WHOOP's own
+consent screen for *their own* WHOOP account. The worst that does is connect
+their account through this app's registered WHOOP developer app — spending
+its rate limit, never touching anyone's data. `WHOOP_APP_TOKEN` above is a
+cheap deterrent against that, not a security boundary; a constant baked into
+the app binary can be extracted by anyone who tries. Worth having if this app
+is ever used by more than a handful of people, not essential for one.
 
 ## Editing the plan
 

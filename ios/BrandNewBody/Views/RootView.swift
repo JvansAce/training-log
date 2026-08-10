@@ -23,6 +23,7 @@ enum Tab: String, CaseIterable, Identifiable {
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
+    @Environment(WhoopClient.self) private var whoop
 
     @AppStorage("programme") private var programmeRaw = Programme.body.rawValue
     @State private var tab: Tab = .today
@@ -53,7 +54,17 @@ struct RootView: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: timer.isRunning)
-        .task { store.refresh() }
+        .task {
+            // Belt and suspenders alongside the App's scene-phase handler:
+            // `.task` runs once this view first appears, which covers a cold
+            // launch reliably even on the rare run where the very first
+            // `scenePhase` transition to `.active` is missed.
+            store.refresh()
+            await whoop.fetchToday(dayKey: store.state.today)
+            if let reading = whoop.today?.recovery {
+                store.applyWhoopReading(reading, on: store.state.today)
+            }
+        }
     }
 
     @ViewBuilder

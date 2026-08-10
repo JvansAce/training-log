@@ -21,10 +21,12 @@ A single-page training log for the lean-bulk plan: Tuesday/Wednesday/Friday/Satu
 | `whoop.js` | Client WHOOP layer — talks to `/api/whoop/*` |
 | `functions/_shared.js` | Shared Access identity check used by every function below |
 | `functions/api/state.js` | Pages Function: authenticated read/write with server-side merge |
-| `functions/api/whoop/authorize.js` | Starts the WHOOP OAuth flow |
-| `functions/api/whoop/callback.js` | Handles WHOOP's redirect back, exchanges the code for tokens |
-| `functions/api/whoop/today.js` | Returns today's recovery/strain/sleep/workouts, refreshing the token if needed |
-| `functions/api/whoop/disconnect.js` | Revokes and deletes the stored WHOOP tokens |
+| `functions/api/whoop/authorize.js` | Starts the WHOOP OAuth flow (web app) |
+| `functions/api/whoop/callback.js` | Handles WHOOP's redirect back, exchanges the code for tokens (web app) |
+| `functions/api/whoop/today.js` | Returns today's recovery/strain/sleep/workouts, refreshing the token if needed (web app) |
+| `functions/api/whoop/disconnect.js` | Revokes and deletes the stored WHOOP tokens (web app) |
+| `functions/api/whoop/exchange.js` | Trades a code for tokens with no D1 row or Access check — the iOS app's OAuth exchange, see `ios/README.md` |
+| `functions/api/whoop/refresh.js` | Same, for a refresh token — the iOS app's counterpart to `today.js`'s inline refresh |
 | `schema.sql` | D1 tables — training state, WHOOP tokens, OAuth state |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
 | `DEPLOY.md` | Step-by-step deployment walkthrough — start there |
@@ -165,6 +167,8 @@ Each day's scored recovery, strain, sleep, HRV and resting heart rate are also w
 If WHOOP logs a workout, Today shows it with a button to mark the session complete. It never ticks anything on its own — WHOOP knows you trained, it doesn't know which items on the checklist you actually did.
 
 **Already connected before the `read:workout` scope was added?** A granted OAuth scope is fixed at connection time, so workouts stay invisible until you reconnect: Setup → Disconnect, then Connect WHOOP again. Recovery, strain and sleep keep working either way.
+
+**Also running the native iOS app?** It reuses this same `WHOOP_CLIENT_ID` / `WHOOP_CLIENT_SECRET` pair through two more endpoints, `exchange.js` and `refresh.js` — deliberately unauthenticated, since the app has no Access session to present. Both need to bypass Cloudflare Access at the hostname level, and an optional `WHOOP_APP_TOKEN` env var can require a shared header on them. See `ios/README.md`'s WHOOP section for the full setup, including why the app talks to WHOOP directly rather than through `today.js`.
 
 ## Install on the phone
 

@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct SetupView: View {
     @Environment(AppStore.self) private var store
+    @Environment(WhoopClient.self) private var whoop
 
     @State private var exportDocument: BackupDocument? = nil
     @State private var showExporter = false
@@ -16,6 +17,7 @@ struct SetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             iCloudPanel
+            whoopPanel
             backupPanel
             youPanel
             startDatePanel
@@ -76,6 +78,55 @@ struct SetupView: View {
                     off for this app in Settings, or a build without the iCloud capability.
                     """)
             }
+        }
+    }
+
+    // MARK: WHOOP
+
+    private var whoopPanel: some View {
+        Panel(title: "WHOOP", tag: whoopTag) {
+            switch whoop.status {
+            case .checking:
+                Note("Checking connection status.")
+            case .notConnected(let reason):
+                if !WhoopConfig.isConfigured {
+                    Note("""
+                        WhoopConfig.swift still has its placeholder values — see ios/README.md for what to \
+                        fill in before this will do anything.
+                        """, dimmed: true)
+                } else {
+                    Note("""
+                        Connect WHOOP to see today's recovery, strain and sleep on the Today page — \
+                        including a flag on days recovery is low.\(reason != nil ? " " + reason! : "")
+                        """)
+                    ActionButton(title: "Connect WHOOP", prominent: true) { whoop.connect() }
+                }
+            case .connected:
+                if let asOf = whoop.today?.asOf {
+                    Note("Last read: \(asOf.formatted(date: .omitted, time: .shortened)).")
+                } else {
+                    Note("Connected — no scored recovery yet today.")
+                }
+                HStack {
+                    ActionButton(title: "Refresh now") {
+                        Task {
+                            await whoop.fetchToday(dayKey: state.today)
+                            if let reading = whoop.today?.recovery {
+                                store.applyWhoopReading(reading, on: state.today)
+                            }
+                        }
+                    }
+                    ActionButton(title: "Disconnect", destructive: true) { whoop.disconnect() }
+                }
+            }
+        }
+    }
+
+    private var whoopTag: String {
+        switch whoop.status {
+        case .checking: return "checking…"
+        case .notConnected: return "not connected"
+        case .connected: return "connected"
         }
     }
 
