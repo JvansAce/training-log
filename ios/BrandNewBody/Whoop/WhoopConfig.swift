@@ -17,12 +17,12 @@ public enum WhoopConfig {
     /// Its `/api/whoop/exchange` and `/api/whoop/refresh` paths must be
     /// carved out of Cloudflare Access (see ios/README.md), or every call
     /// here gets Access's login page back instead of JSON.
-    public static let workerBaseURL = URL(string: "https://REPLACE-ME.pages.dev")
+    public static let workerBaseURL = URL(string: "https://training-log.c8m85gjycc.workers.dev")
 
     /// Same value as `WHOOP_CLIENT_ID` on that Pages project. Not a secret —
     /// it appears directly in the authorize URL below, which is public by
     /// construction; anyone watching network traffic sees it regardless.
-    public static let clientID = "REPLACE-ME"
+    public static let clientID = "37e519ab-e22d-4c70-adc1-fc22bea9efba"
 
     /// Matches `authorize.js`'s `SCOPES` — `offline` is what grants a refresh
     /// token at all, so dropping it here would mean reconnecting every hour.
