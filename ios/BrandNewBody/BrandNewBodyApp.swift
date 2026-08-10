@@ -7,6 +7,7 @@ struct BrandNewBodyApp: App {
     private let container: ModelContainer
     @State private var store: AppStore
     @State private var restTimer = RestTimer()
+    @State private var whoop = WhoopClient()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -21,6 +22,7 @@ struct BrandNewBodyApp: App {
             RootView()
                 .environment(store)
                 .environment(restTimer)
+                .environment(whoop)
                 .preferredColorScheme(.dark)
                 .tint(Theme.red)
         }
@@ -31,7 +33,14 @@ struct BrandNewBodyApp: App {
             // `state.today`. Without this, everything typed after midnight
             // silently lands on yesterday. It is also the moment to pick up
             // anything CloudKit delivered while the app was asleep.
-            if phase == .active { store.refresh() }
+            guard phase == .active else { return }
+            store.refresh()
+            Task {
+                await whoop.fetchToday(dayKey: store.state.today)
+                if let reading = whoop.today?.recovery {
+                    store.applyWhoopReading(reading, on: store.state.today)
+                }
+            }
         }
     }
 }

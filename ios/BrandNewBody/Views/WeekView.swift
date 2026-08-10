@@ -10,7 +10,7 @@ struct WeekView: View {
         let unlocked = weeks >= Plan.addInWeek
         let pick = Plan.addIns[weeks % Plan.addIns.count]
 
-        VStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 14) {
             Panel(title: "The week", tag: "4 lifts · 1 tennis · 1 cardio") {
                 Note("""
                     Priority order when life gets busy: keep the four lifting days, drop Thursday cardio \

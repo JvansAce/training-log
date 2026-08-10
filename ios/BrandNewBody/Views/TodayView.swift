@@ -20,7 +20,7 @@ struct TodayView: View {
     private var activeDate: String { editingDate ?? state.today }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 14) {
             Spine(state: state, viewing: viewingDow) { viewing = $0; editingDate = nil }
 
             backfillRow
@@ -310,40 +310,113 @@ private struct DeloadPanel: View {
 /// needed a server. This version has no server, so the number is typed —
 /// everything downstream (the deload signal, the Progress chart) is unchanged,
 /// because it only ever read a percentage out of the record.
+/// Recovery, however it got there.
+///
+/// `AppStore` is the single source of truth for the numbers themselves —
+/// `WhoopClient` only ever reaches this screen indirectly, by writing into
+/// `state.recovery` through `applyWhoopReading`. What this panel reads
+/// `WhoopClient` for directly is the two things that never get persisted:
+/// whether a connection exists at all, and today's detected workouts, which
+/// the app deliberately never ticks on its own — WHOOP knows you trained, it
+/// doesn't know which items on the checklist you actually did.
 private struct RecoveryPanel: View {
     var state: LogState
     @Environment(AppStore.self) private var store
+    @Environment(WhoopClient.self) private var whoop
 
-    private var today: RecoveryRecord? { state.recovery[state.today] }
+    private var reading: RecoveryRecord? { state.recovery[state.today] }
+    private var isConnected: Bool { whoop.status == .connected }
 
     var body: some View {
-        Panel(title: "Recovery", tag: today?.recovery.map { "\($0)%" } ?? "not logged") {
-            if let value = today?.recovery {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    BigStat(value: "\(value)", unit: "%")
-                    Spacer()
-                    ActionButton(title: "Clear") { store.setRecovery(nil, on: state.today) }
-                }
-                if value < Deload.redRecovery {
-                    Note("""
-                        Recovery is red today. If today's session has any give in it — Thursday's cardio, \
-                        the pyramid — this is the day to take it.
-                        """)
-                }
+        Panel(title: "Recovery", tag: tag) {
+            if isConnected {
+                connectedContent
             } else {
-                EntryField(placeholder: "recovery %, if you track it",
-                           buttonTitle: "Log", prominent: false, keyboard: .numberPad) { text in
-                    guard let value = Int(text), (0...100).contains(value) else { return false }
-                    store.setRecovery(value, on: state.today)
-                    return true
-                }
-                Note("""
-                    Optional. If you wear a strap that scores recovery, putting the number in each morning \
-                    is what lets the app notice a bad week and prescribe a deload off your own data rather \
-                    than off a calendar.
-                    """)
+                disconnectedContent
             }
         }
+    }
+
+    private var tag: String {
+        if let value = reading?.recovery { return "\(value)%" }
+        return isConnected ? "no data yet today" : "not connected"
+    }
+
+    @ViewBuilder
+    private var connectedContent: some View {
+        HStack(spacing: 18) {
+            statColumn(reading?.strain.map { String(format: "%.1f", $0) } ?? "–", label: "strain")
+            statColumn(reading?.sleepPct.map { "\($0)%" } ?? "–", label: "sleep")
+            statColumn(reading?.hrvMs.map { "\(Int($0.rounded()))" } ?? "–", label: "hrv ms")
+            statColumn(reading?.restingHR.map { "\($0)" } ?? "–", label: "rhr")
+        }
+
+        if let workouts = whoop.today?.workouts, !workouts.isEmpty {
+            let complete = state.day(state.today).done.count >= Plan.day(state.todayDow).items.count
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WHOOP recorded " + workouts.map {
+                    ($0.sport ?? "a workout")
+                        + ($0.minutes.map { " · \($0) min" } ?? "")
+                        + ($0.strain.map { " · \(String(format: "%.1f", $0)) strain" } ?? "")
+                }.joined(separator: ", ") + " today.")
+                    .font(Theme.body(13))
+                    .foregroundStyle(Theme.bone)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !complete {
+                    ActionButton(title: "Tick this session") { markTodayComplete() }
+                }
+            }
+        }
+
+        if let value = reading?.recovery, value < Deload.redRecovery {
+            Note("""
+                Recovery is red today. If today's session has any give in it — Thursday's cardio, the \
+                pyramid — this is the day to take it.
+                """)
+        }
+    }
+
+    private func statColumn(_ value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(Theme.mono(15, weight: .bold)).foregroundStyle(Theme.bone)
+            Text(label).font(Theme.mono(9)).foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func markTodayComplete() {
+        // Explicit tap rather than auto-ticking on detection, matching the
+        // web app's reasoning exactly: WHOOP knows you trained, it doesn't
+        // know which items on the checklist you actually did.
+        for item in Plan.day(state.todayDow).items where !state.day(state.today).done.contains(item.key) {
+            store.toggleItem(item.key, on: state.today)
+        }
+    }
+
+    @ViewBuilder
+    private var disconnectedContent: some View {
+        if case .notConnected(let reason) = whoop.status, let reason {
+            Note(reason, dimmed: true)
+        }
+        ActionButton(title: "Connect WHOOP", prominent: true) { whoop.connect() }
+
+        EntryField(placeholder: "recovery %, if you don't", buttonTitle: "Log", prominent: false,
+                   keyboard: .numberPad) { text in
+            guard let value = Int(text), (0...100).contains(value) else { return false }
+            store.setRecovery(value, on: state.today)
+            return true
+        }
+        if let value = reading?.recovery {
+            HStack {
+                PTag("logged \(value)%")
+                ActionButton(title: "Clear") { store.setRecovery(nil, on: state.today) }
+            }
+        }
+        Note("""
+            Connect WHOOP for this automatically, including the flag on days recovery is low. Or type it \
+            by hand each morning if you wear a different strap — either way, it's what lets the app notice \
+            a bad week and prescribe a deload off your own data rather than off a calendar.
+            """)
     }
 }
 
@@ -359,8 +432,11 @@ private struct SessionPanel: View {
 
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
+    @Environment(\.scenePhase) private var scenePhase
     @State private var note = ""
     @State private var noteLoaded = false
+    @State private var noteLoadedFor = ""
+    @State private var debouncer = Debouncer()
 
     private var day: TrainingDay { Plan.day(dow) }
     private var log: DayRecord { state.day(activeDate) }
@@ -395,9 +471,9 @@ private struct SessionPanel: View {
 
             if canEdit {
                 TextEditorField(text: $note, placeholder: "Notes for this session (optional)")
-                    .onChange(of: note) { _, new in
+                    .onChange(of: note) { _, _ in
                         guard noteLoaded else { return }
-                        store.setNote(new, on: activeDate)
+                        scheduleNoteCommit()
                     }
             } else if !log.note.isEmpty {
                 Note("Note: \(log.note)")
@@ -408,13 +484,31 @@ private struct SessionPanel: View {
             }
         }
         .onAppear { load() }
-        .onChange(of: activeDate) { _, _ in load() }
+        .onChange(of: activeDate) { old, _ in
+            debouncer.flush { flushNote(for: old) }
+            load()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { debouncer.flush { flushNote(for: activeDate) } }
+        }
+        .onDisappear { debouncer.flush { flushNote(for: activeDate) } }
     }
 
     private func load() {
         noteLoaded = false
         note = state.day(activeDate).note
+        noteLoadedFor = activeDate
         noteLoaded = true
+    }
+
+    private func scheduleNoteCommit() {
+        let date = activeDate
+        debouncer.schedule { flushNote(for: date) }
+    }
+
+    private func flushNote(for date: String) {
+        guard noteLoadedFor == date else { return }
+        store.setNote(note, on: date)
     }
 
     private var tag: String {
@@ -436,8 +530,10 @@ private struct LiftRow: View {
     var activeDate: String
 
     @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var drafts: [DraftSet] = []
     @State private var loadedFor = ""
+    @State private var debouncer = Debouncer()
 
     struct DraftSet: Identifiable, Equatable {
         let id = UUID()
@@ -489,8 +585,24 @@ private struct LiftRow: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear { load() }
-        .onChange(of: activeDate) { _, _ in load() }
-        .onChange(of: drafts) { _, _ in commit() }
+        .onChange(of: activeDate) { old, _ in
+            // Whatever was pending for the day being left has to land before
+            // switching — `flush`'s own `loadedFor == date` guard would
+            // otherwise silently drop it, since `activeDate` here is already
+            // the new value by the time this fires, which is exactly why the
+            // old one is passed in explicitly rather than read fresh.
+            debouncer.flush { flush(for: old) }
+            load()
+        }
+        .onChange(of: drafts) { _, _ in scheduleCommit() }
+        .onChange(of: scenePhase) { _, phase in
+            // A rep count typed and immediately followed by backgrounding the
+            // app — switching to a stopwatch mid-set is a real gym habit, not
+            // an edge case — must not lose the debounce window it was sitting
+            // in when the app was suspended.
+            if phase != .active { debouncer.flush { flush(for: activeDate) } }
+        }
+        .onDisappear { debouncer.flush { flush(for: activeDate) } }
     }
 
     private func numberField(_ placeholder: String, text: Binding<String>) -> some View {
@@ -521,14 +633,27 @@ private struct LiftRow: View {
             : existing.map { DraftSet(kg: $0.kg.map(Lifts.fmt) ?? "", reps: String($0.reps)) }
     }
 
-    private func commit() {
-        guard loadedFor == activeDate else { return }
+    /// Local `drafts` already updated the instant the keystroke landed —
+    /// this only delays when that becomes a store mutation, so typing stays
+    /// responsive while the expensive part happens once per pause rather
+    /// than once per key.
+    private func scheduleCommit() {
+        let date = activeDate
+        debouncer.schedule { flush(for: date) }
+    }
+
+    /// The actual write, for a specific date rather than reading `activeDate`
+    /// fresh — the caller may be flushing a day that's no longer the active
+    /// one (switching away, or the app backgrounding) and has to name which
+    /// day's edit it's rescuing.
+    private func flush(for date: String) {
+        guard loadedFor == date else { return }
         let sets = drafts.compactMap { draft -> LiftSet? in
             guard let reps = Int(draft.reps), reps > 0 else { return nil }
             let kg = Double(draft.kg.replacingOccurrences(of: ",", with: "."))
             return LiftSet(kg: (kg ?? 0) > 0 ? kg : nil, reps: reps)
         }
-        store.setSets(sets, liftID: liftID, on: activeDate)
+        store.setSets(sets, liftID: liftID, on: date)
     }
 }
 

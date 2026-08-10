@@ -1,8 +1,16 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// A native `Form`, deliberately — this is the one screen in the app that is
+/// unambiguously a settings screen, and a settings screen with grouped rows,
+/// section footers and a destructive-role delete button IS what "looks
+/// native" means on iOS. Every other page in this app carries its own
+/// visual identity (the card panels, the charts); this one borrows the
+/// system's, on purpose, the same way Settings.app does inside every
+/// third-party app that links out to it.
 struct SetupView: View {
     @Environment(AppStore.self) private var store
+    @Environment(WhoopClient.self) private var whoop
 
     @State private var exportDocument: BackupDocument? = nil
     @State private var showExporter = false
@@ -14,13 +22,15 @@ struct SetupView: View {
     private var state: LogState { store.state }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            iCloudPanel
-            backupPanel
-            youPanel
-            startDatePanel
-            dangerZone
+        Form {
+            iCloudSection
+            whoopSection
+            backupSection
+            youSection
+            startDateSection
+            dangerZoneSection
         }
+        .navigationTitle("Setup")
         .onAppear {
             startDate = DateKit.date(state.startDate) ?? Date()
         }
@@ -47,79 +57,113 @@ struct SetupView: View {
 
     // MARK: iCloud
 
-    private var iCloudPanel: some View {
-        Panel(title: "iCloud", tag: store.cloudStatus == .syncing ? "syncing" : "local only") {
+    private var iCloudSection: some View {
+        Section {
+            LabeledContent("Status", value: store.cloudStatus == .syncing ? "Syncing" : "Local only")
+        } header: {
+            Text("iCloud")
+        } footer: {
             switch store.cloudStatus {
             case .syncing:
-                Note("""
-                    Your log lives on this device and is mirrored to your private iCloud database. Every \
-                    device signed into the same Apple Account reads and writes the same records, and the \
-                    whole thing is included in your iCloud backup. Nothing is sent anywhere else — there \
-                    is no server in this app and no account to create.
-                    """)
-                Note("""
-                    Entries merge rather than overwrite, because each day, each lift and each practice is \
-                    its own record: a set logged on your phone in the garage and a weigh-in typed on the \
-                    iPad upstairs touch different records and both survive. Deletions propagate properly \
-                    too. It syncs in the background — expect a few seconds, not instant, and it catches up \
-                    on its own after a spell with no signal.
+                Text("""
+                    Mirrored to your private iCloud database. Every device signed into the same Apple \
+                    Account reads and writes the same records, and the whole thing is included in your \
+                    iCloud backup. Entries merge rather than overwrite — a set logged on your phone and a \
+                    weigh-in typed on your iPad both survive, because each is its own record. Expect a few \
+                    seconds, not instant, and it catches up on its own after a spell with no signal.
                     """)
             case .localOnly(let reason):
-                Note("""
-                    This copy is not syncing. Everything still works and is saved on this device, but it is \
-                    not being mirrored to iCloud and is not in your iCloud backup — so export a file \
-                    occasionally until it is fixed.
+                Text("""
+                    Not syncing. Everything still works and is saved on this device, but it isn't mirrored \
+                    to iCloud or in your iCloud backup — export a file occasionally until this is fixed. \
+                    Reason given: \(reason). The usual causes are no Apple Account signed in, iCloud Drive \
+                    switched off for this app, or a build without the iCloud capability.
                     """)
-                Note("Reason given: \(reason)", dimmed: true)
-                Note("""
-                    The usual causes are no Apple Account signed in on the device, iCloud Drive switched \
-                    off for this app in Settings, or a build without the iCloud capability.
-                    """)
+            }
+        }
+    }
+
+    // MARK: WHOOP
+
+    private var whoopSection: some View {
+        Section {
+            switch whoop.status {
+            case .checking:
+                LabeledContent("Status", value: "Checking…")
+            case .notConnected:
+                LabeledContent("Status", value: "Not connected")
+                if WhoopConfig.isConfigured {
+                    Button("Connect WHOOP") { whoop.connect() }
+                }
+            case .connected:
+                LabeledContent("Status", value: "Connected")
+                if let asOf = whoop.today?.asOf {
+                    LabeledContent("Last read", value: asOf.formatted(date: .omitted, time: .shortened))
+                }
+                Button("Refresh now") {
+                    Task {
+                        await whoop.fetchToday(dayKey: state.today)
+                        if let reading = whoop.today?.recovery {
+                            store.applyWhoopReading(reading, on: state.today)
+                        }
+                    }
+                }
+                Button("Disconnect", role: .destructive) { whoop.disconnect() }
+            }
+        } header: {
+            Text("WHOOP")
+        } footer: {
+            switch whoop.status {
+            case .checking:
+                Text("Checking connection status.")
+            case .notConnected(let reason):
+                if !WhoopConfig.isConfigured {
+                    Text("""
+                        WhoopConfig.swift still has its placeholder values — see ios/README.md for what to \
+                        fill in before this will do anything.
+                        """)
+                } else {
+                    Text("Connect WHOOP to see today's recovery, strain and sleep on the Today page — including a flag on days recovery is low.\(reason != nil ? " " + reason! : "")")
+                }
+            case .connected:
+                Text(whoop.today?.recovery.recovery == nil
+                    ? "Connected — no scored recovery yet today."
+                    : "Recovery, strain, sleep, HRV and resting heart rate are read automatically each time you open the app.")
             }
         }
     }
 
     // MARK: Backup
 
-    private var backupPanel: some View {
-        Panel(title: "Backup", tag: "a copy you own") {
-            Note("""
-                iCloud carries the log between your own devices. This is for everything else — moving to \
-                another phone, keeping a copy outside Apple's estate, or undoing a bad afternoon with the \
-                delete button, which no amount of syncing protects you from.
-                """)
-            HStack {
-                ActionButton(title: "Export file", prominent: true) {
-                    if let data = try? store.exportData() {
-                        exportDocument = BackupDocument(data: data)
-                        showExporter = true
-                    } else {
-                        message = "Could not build the backup file."
-                    }
+    private var backupSection: some View {
+        Section {
+            Button("Export file") {
+                if let data = try? store.exportData() {
+                    exportDocument = BackupDocument(data: data)
+                    showExporter = true
+                } else {
+                    message = "Could not build the backup file."
                 }
-                ActionButton(title: "Import file") { showImporter = true }
             }
-            Note("""
-                JSON is the one to keep for restoring, and importing replaces everything rather than \
-                merging. CSV is for poking at the numbers in a spreadsheet — it cannot be imported back.
-                """)
-            HStack {
-                ShareLink(item: store.weightsCSV()) { csvLabel("Weigh-ins CSV") }
-                ShareLink(item: store.liftsCSV()) { csvLabel("Lifts CSV") }
-            }
-            if let message {
-                Note(message, dimmed: true)
+            Button("Import file") { showImporter = true }
+            ShareLink("Weigh-ins CSV", item: store.weightsCSV())
+            ShareLink("Lifts CSV", item: store.liftsCSV())
+        } header: {
+            Text("Backup")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("""
+                    iCloud carries the log between your own devices. This is for everything else — moving \
+                    to another phone, keeping a copy outside Apple's estate, or undoing a bad afternoon \
+                    with the delete button, which no amount of syncing protects you from. JSON is the one \
+                    to keep for restoring — importing replaces everything rather than merging. CSV is for \
+                    a spreadsheet and can't be imported back.
+                    """)
+                if let message {
+                    Text(message).foregroundStyle(.red)
+                }
             }
         }
-    }
-
-    private func csvLabel(_ title: String) -> some View {
-        Text(title)
-            .font(Theme.body(13, weight: .semibold))
-            .foregroundStyle(Theme.bone)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(Theme.raise, in: RoundedRectangle(cornerRadius: 9))
     }
 
     private func handleImport(_ result: Result<URL, Error>) {
@@ -139,72 +183,116 @@ struct SetupView: View {
 
     // MARK: You
 
-    private var youPanel: some View {
-        Panel(title: "You", tag: tagForYou) {
-            Note("""
-                Height turns a bodyweight into something you can judge — it drives the target band and \
-                waist on Progress. Both together drive the calorie target, which is then calculated from \
-                your current weight rather than fixed, so it keeps up as you gain instead of quietly \
-                becoming a smaller surplus.
-                """)
-            HeightField(current: state.heightCm) { store.setHeight($0) }
-            EntryField(placeholder: "year you were born",
-                       buttonTitle: state.birthYear == nil ? "Set year" : "Update",
-                       prominent: state.birthYear == nil,
-                       keyboard: .numberPad) { text in
+    private var youSection: some View {
+        Section {
+            ValidatedRow(label: "Height (cm)", value: state.heightCm.map(String.init) ?? "",
+                        keyboard: .numberPad) { text in
+                guard let value = Int(text), value >= Build.minHeight, value <= Build.maxHeight else { return false }
+                store.setHeight(value)
+                return true
+            }
+            ValidatedRow(label: "Born", value: state.birthYear.map(String.init) ?? "",
+                        keyboard: .numberPad) { text in
                 guard let year = Int(text), let today = DateKit.date(state.today) else { return false }
                 let thisYear = Calendar.current.component(.year, from: today)
                 guard year >= thisYear - Build.maxAge, year <= thisYear - Build.minAge else { return false }
                 store.setBirthYear(year)
                 return true
             }
-            Note("Set once. Year of birth rather than age so it doesn't go stale on your birthday.")
-            EntryField(placeholder: "barbell weight, kg (default 20)",
-                       buttonTitle: "Set bar", prominent: false) { text in
-                guard let kg = Double(text.replacingOccurrences(of: ",", with: ".")),
-                      kg > 0, kg <= 50 else { return false }
+            ValidatedRow(label: "Barbell (kg)", value: Lifts.fmt(state.barKg)) { text in
+                guard let kg = Double(text.replacingOccurrences(of: ",", with: ".")), kg > 0, kg <= 50 else { return false }
                 store.setBarKg(kg)
                 return true
             }
-            Note("The bar the plate maths assumes. \(Lifts.fmt(state.barKg)) kg at the moment.")
+        } header: {
+            Text("You")
+        } footer: {
+            Text("""
+                Height and year of birth drive the target band and waist on Progress, and the calorie \
+                target — calculated from your current weight rather than fixed, so it keeps up as you \
+                gain. Year of birth rather than age, so it doesn't go stale on your birthday. Barbell \
+                weight is what the plate maths assumes.
+                """)
         }
-    }
-
-    private var tagForYou: String {
-        var parts: [String] = []
-        if let cm = state.heightCm { parts.append("\(cm) cm") }
-        if let age = Fuel.age(state) { parts.append("\(age)y") }
-        return parts.isEmpty ? "not set" : parts.joined(separator: " · ")
     }
 
     // MARK: Start date
 
-    private var startDatePanel: some View {
-        Panel(title: "Start date", tag: "week counter") {
-            Note("""
-                Currently week \(state.weeksIn + 1). Set this to your real first training day — the add-ins \
-                unlock at week \(Plan.addInWeek).
+    private var startDateSection: some View {
+        Section {
+            DatePicker("First training day", selection: $startDate, in: ...Date(), displayedComponents: .date)
+                .onChange(of: startDate) { _, new in store.setStartDate(DateKit.key(new)) }
+        } header: {
+            Text("Start date")
+        } footer: {
+            Text("""
+                Currently week \(state.weeksIn + 1). Set this to your real first training day — the \
+                add-ins unlock at week \(Plan.addInWeek).
                 """)
-            DatePicker("First training day", selection: $startDate, in: ...Date(),
-                       displayedComponents: .date)
-                .font(Theme.body(13))
-                .foregroundStyle(Theme.bone)
-            ActionButton(title: "Save") { store.setStartDate(DateKit.key(startDate)) }
         }
     }
 
     // MARK: Danger zone
 
-    private var dangerZone: some View {
-        Panel(title: "Danger zone", tag: "no undo") {
-            Note("""
+    private var dangerZoneSection: some View {
+        Section {
+            Button("Delete all data", role: .destructive) { confirmDelete = true }
+        } header: {
+            Text("Danger Zone")
+        } footer: {
+            Text("""
                 Deletes every weigh-in, session tick and logged set — and because the log is mirrored to \
-                iCloud, it deletes them from your other devices too, as soon as they next sync.
+                iCloud, it deletes them from your other devices too, as soon as they next sync. No undo.
                 """)
-            ActionButton(title: "Delete all data", prominent: true, destructive: true) {
-                confirmDelete = true
-            }
         }
+    }
+}
+
+/// A Form row that behaves like a native `LabeledContent`, except the value
+/// is editable in place: type, and it commits when the field loses focus or
+/// on Return. Invalid input reverts to the last good value rather than
+/// leaving the field in a state that silently never saved — which a plain
+/// `TextField` bound straight to a validated property would otherwise do.
+private struct ValidatedRow: View {
+    var label: String
+    var value: String
+    var keyboard: UIKeyboardType = .decimalPad
+    var onCommit: (String) -> Bool
+
+    @State private var text: String
+    @FocusState private var focused: Bool
+
+    init(label: String, value: String, keyboard: UIKeyboardType = .decimalPad,
+         onCommit: @escaping (String) -> Bool) {
+        self.label = label
+        self.value = value
+        self.keyboard = keyboard
+        self.onCommit = onCommit
+        _text = State(initialValue: value)
+    }
+
+    var body: some View {
+        LabeledContent(label) {
+            TextField(label, text: $text)
+                .keyboardType(keyboard)
+                .multilineTextAlignment(.trailing)
+                .focused($focused)
+                .submitLabel(.done)
+                .onSubmit(commit)
+        }
+        .onChange(of: focused) { wasFocused, isFocused in
+            if wasFocused && !isFocused { commit() }
+        }
+        // The stored value changing elsewhere (a fresh sync, a restore from
+        // backup) has to overwrite whatever's showing — but only while the
+        // field isn't actively being edited, or a CloudKit merge landing
+        // mid-keystroke would erase what someone is in the middle of typing.
+        .onChange(of: value) { _, new in if !focused { text = new } }
+    }
+
+    private func commit() {
+        guard text != value else { return }
+        if !onCommit(text) { text = value }
     }
 }
 
