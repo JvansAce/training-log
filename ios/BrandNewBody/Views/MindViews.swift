@@ -25,7 +25,7 @@ struct MindTodayView: View {
                 ActionButton(title: "Start the programme", prominent: true) { store.startMind() }
             }
         } else {
-            LazyVStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 Panel(title: "Today",
                       tag: "\(Plan.dayNames[state.todayDow] ?? "") · week \(Mind.weeksIn(state) + 1)") {
                     Note(intro)
@@ -399,7 +399,7 @@ struct MindWeekView: View {
     var body: some View {
         let active = Mind.activePractices(state)
 
-        LazyVStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 22) {
             Panel(title: "The week", tag: "last 7 days") {
                 ForEach(Plan.order, id: \.self) { dow in
                     let date = DateKit.adding(-((state.todayDow - dow + 7) % 7), to: state.today)
@@ -472,7 +472,7 @@ struct MindProgressView: View {
         let streaks = Mind.streaks(state)
         let journalDays = Mind.journalDays(state)
 
-        LazyVStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 22) {
             Panel(title: "Consistency", tag: "last 28 days") {
                 MacroGrid(items: [
                     .init(value: adherence.map { "\(Int(($0.rate * 100).rounded()))" } ?? "–",

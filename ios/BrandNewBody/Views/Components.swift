@@ -35,12 +35,26 @@ struct Panel<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Theme.slate, in: RoundedRectangle(cornerRadius: 18))
-        .shadow(color: .black.opacity(0.22), radius: 12, x: 0, y: 4)
+        // A drop shadow alone barely registers against a near-black page —
+        // there's too little light for it to fall away from. A faint light
+        // rim, the way an actual pane of glass catches an edge, reads as
+        // "raised" on a dark surface far more reliably than a shadow does.
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.35), radius: 14, x: 0, y: 6)
         .opacity(dimmed ? 0.55 : 1)
     }
 }
 
-/// The small uppercase chip in a panel header.
+/// A small caption, not a badge. This used to sit in its own filled capsule —
+/// which meant nearly every card, everywhere, carried a little grey pill in
+/// its header, and a screen with ten of those reads as ten instances of the
+/// same UI-kit component rather than ten different pieces of content. Most
+/// of what this labels (a date range, a count, "today · athletic day") is a
+/// caption, not a status that needs a badge to stand out — so now it's
+/// plain, muted text, and reads that way.
 struct PTag: View {
     var text: String
     var tint: Color = Theme.muted
@@ -53,11 +67,8 @@ struct PTag: View {
     var body: some View {
         Text(text.uppercased())
             .font(Theme.mono(9.5))
-            .tracking(1.4)
+            .tracking(1.2)
             .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Theme.raise, in: Capsule())
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -225,21 +236,25 @@ extension TickRow where Detail == EmptyView {
     }
 }
 
+/// A circle, not a rounded square — the square-with-a-tick is the one shape
+/// every HTML checkbox has ever used, and it was the single most "generic web
+/// form" element in the app. A filled circle with a checkmark is what
+/// Reminders, Things and every other native iOS checklist actually draws.
 struct Checkbox: View {
     var isOn: Bool
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(isOn ? Theme.bone : Color.clear)
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(isOn ? Theme.bone : Theme.line, lineWidth: 1.5))
+        Circle()
+            .fill(isOn ? Theme.red : Color.clear)
+            .overlay(Circle().strokeBorder(isOn ? Theme.red : Theme.line, lineWidth: 1.5))
             .overlay {
                 if isOn {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Theme.ink)
+                        .foregroundStyle(Theme.bone)
                 }
             }
-            .frame(width: 22, height: 22)
+            .frame(width: 24, height: 24)
     }
 }
 

@@ -8,7 +8,7 @@ struct ProgressPage: View {
     private var state: LogState { store.state }
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 22) {
             thisWeek
             bodyWeight
             BuildPanel(state: state)

@@ -28,10 +28,16 @@ extension Color {
 /// display face on near-black, one red accent — was drawn for that. A light
 /// mode would be a different design, not a recolouring.
 enum Theme {
-    static let ink = Color(hex: "141824")
-    static let slate = Color(hex: "1B2130")
-    static let raise = Color(hex: "222A3C")
-    static let line = Color(hex: "2E3750")
+    // The four navy surfaces used to sit within about 5% of each other in
+    // lightness — page, card, input field and divider were nearly the same
+    // colour, so no amount of shadow or border tuning on a card could make
+    // it read as a raised surface: there was almost nothing for the shadow
+    // to separate it from. Widened to a real, deliberate step between each
+    // one — same navy family, same mood, just actually layered now.
+    static let ink = Color(hex: "12151F")
+    static let slate = Color(hex: "1E2436")
+    static let raise = Color(hex: "2A3149")
+    static let line = Color(hex: "3A4260")
     static let bone = Color(hex: "EDE7DB")
     static let muted = Color(hex: "868FA6")
     static let red = Color(hex: "E23B3B")

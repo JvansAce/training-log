@@ -20,7 +20,7 @@ struct TodayView: View {
     private var activeDate: String { editingDate ?? state.today }
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 14) {
+        LazyVStack(alignment: .leading, spacing: 22) {
             Spine(state: state, viewing: viewingDow) { viewing = $0; editingDate = nil }
 
             backfillRow
