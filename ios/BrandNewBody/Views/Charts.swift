@@ -42,6 +42,7 @@ struct Sparkline: View {
             Chart {
                 ForEach(Array(values.enumerated()), id: \.offset) { index, value in
                     LineMark(x: .value("Index", index), y: .value("kg", value))
+                        .lineStyle(StrokeStyle(lineWidth: ChartSpec.lineWidth, lineCap: .round, lineJoin: .round))
                         .interpolationMethod(.catmullRom)
                     AreaMark(x: .value("Index", index), y: .value("kg", value))
                         .interpolationMethod(.catmullRom)
@@ -53,7 +54,6 @@ struct Sparkline: View {
                 }
             }
             .foregroundStyle(tint)
-            .lineStyle(StrokeStyle(lineWidth: ChartSpec.lineWidth, lineCap: .round, lineJoin: .round))
             .chartXAxis(.hidden)
             .chartYAxis(.hidden)
             // Padded on both sides so a flat run of identical weigh-ins still
@@ -85,13 +85,13 @@ struct WeightChart: View {
                 Chart {
                     ForEach(records, id: \.date) { record in
                         LineMark(x: .value("Date", record.date), y: .value("kg", record.kg))
+                            .lineStyle(StrokeStyle(lineWidth: ChartSpec.lineWidth, lineCap: .round, lineJoin: .round))
                             .interpolationMethod(.catmullRom)
                         AreaMark(x: .value("Date", record.date), y: .value("kg", record.kg))
                             .interpolationMethod(.catmullRom)
                     }
                 }
                 .foregroundStyle(Theme.red)
-                .lineStyle(StrokeStyle(lineWidth: ChartSpec.lineWidth, lineCap: .round, lineJoin: .round))
                 .chartXAxis(.hidden)
                 .chartYScale(domain: low...high)
                 .frame(height: 150)
@@ -282,11 +282,11 @@ struct MiniSpark: View {
             Chart {
                 ForEach(Array(values.enumerated()), id: \.offset) { index, value in
                     LineMark(x: .value("Index", index), y: .value("Value", value))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                         .interpolationMethod(.catmullRom)
                 }
             }
             .foregroundStyle(rising ? Theme.green : Theme.muted)
-            .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
             .chartXAxis(.hidden)
             .chartYAxis(.hidden)
             .frame(width: 54, height: 16)
