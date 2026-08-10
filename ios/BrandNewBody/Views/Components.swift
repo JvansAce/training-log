@@ -2,6 +2,17 @@ import SwiftUI
 import UIKit
 
 /// The card everything sits in.
+///
+/// The title used to be set in the same heavy, tracked, all-caps display face
+/// as a hero number — which meant every single card on a page announced
+/// itself at the same volume the one real headline number should have had
+/// to itself, and a page of ten panels read as ten equally loud shouts
+/// rather than one page with a shape to it. That face is reserved for actual
+/// hero numbers now (`BigStat`, the primary figure in `MacroGrid`); a panel
+/// title is a plain bold system label, the same weight class the platform's
+/// own section headers use. The border is gone too, in favour of a soft
+/// shadow — a hard 1px outline around a flat fill is what a `<div>` looks
+/// like; a native card is lifted off the page, not outlined on it.
 struct Panel<Content: View>: View {
     var title: String
     var tag: String?
@@ -11,9 +22,8 @@ struct Panel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title.uppercased())
-                    .font(Theme.display(19))
-                    .tracking(0.5)
+                Text(title)
+                    .font(Theme.body(16, weight: .bold))
                     .foregroundStyle(Theme.bone)
                 Spacer(minLength: 8)
                 if let tag {
@@ -24,8 +34,8 @@ struct Panel<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Theme.slate, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line, lineWidth: 1))
+        .background(Theme.slate, in: RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.22), radius: 12, x: 0, y: 4)
         .opacity(dimmed ? 0.55 : 1)
     }
 }
@@ -252,13 +262,13 @@ struct MacroGrid: View {
 
     var items: [Item]
 
-    private let columns = [GridItem(.flexible()), GridItem(.flexible()),
-                           GridItem(.flexible()), GridItem(.flexible())]
-
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
-            ForEach(items) { item in
-                VStack(spacing: 2) {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index > 0 {
+                    Rectangle().fill(Theme.line).frame(width: 1, height: 30)
+                }
+                VStack(spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 1) {
                         Text(item.value)
                             .font(Theme.display(22))
@@ -284,8 +294,6 @@ struct MacroGrid: View {
                         .minimumScaleFactor(0.7)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Theme.raise, in: RoundedRectangle(cornerRadius: 10))
             }
         }
     }
@@ -381,44 +389,32 @@ struct ActionButton: View {
 }
 
 /// A collapsible section — the web app's `<details>`.
+/// A thin wrapper over `DisclosureGroup` — the platform's own expand/collapse
+/// control, complete with its own chevron rotation and animation, rather than
+/// a hand-built `Button` + `Image(systemName: "chevron.right")` doing an
+/// impression of one. The public API (`title`, `startsOpen`, a trailing
+/// `content` closure) is unchanged, so nothing that already used this needed
+/// to change with it.
 struct Reveal<Content: View>: View {
     var title: String
-    var startsOpen: Bool
     var content: Content
-    /// nil until the user touches it, so `startsOpen` decides the first state
-    /// without a second source of truth. Written out longhand rather than left
-    /// to the memberwise initialiser: a property-wrapped stored property with
-    /// no initial value becomes a required parameter, and a `private` one
-    /// drags the whole initialiser down to `private` with it.
-    @State private var isOpen: Bool? = nil
+    @State private var isOpen: Bool
 
     init(title: String, startsOpen: Bool = false, @ViewBuilder content: () -> Content) {
         self.title = title
-        self.startsOpen = startsOpen
         self.content = content()
+        _isOpen = State(initialValue: startsOpen)
     }
 
     var body: some View {
-        let open = isOpen ?? startsOpen
-        VStack(alignment: .leading, spacing: 10) {
-            Button {
-                withAnimation(.snappy(duration: 0.18)) { isOpen = !open }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .rotationEffect(.degrees(open ? 90 : 0))
-                    Text(title)
-                        .font(Theme.body(13, weight: .semibold))
-                    Spacer(minLength: 0)
-                }
+        DisclosureGroup(isExpanded: $isOpen) {
+            content.padding(.top, 6)
+        } label: {
+            Text(title)
+                .font(Theme.body(13, weight: .semibold))
                 .foregroundStyle(Theme.muted)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if open { content }
         }
+        .tint(Theme.muted)
     }
 }
 
