@@ -278,7 +278,6 @@ private struct WaistNote: View {
 
 private struct BuildPanel: View {
     var state: LogState
-    @Environment(AppStore.self) private var store
 
     var body: some View {
         if let targets = Build.targets(state) {
@@ -312,18 +311,14 @@ private struct BuildPanel: View {
                     strip off later. The waist is the brake: if it climbs, sit at maintenance for a few \
                     weeks and then start the surplus again.
                     """)
-                Reveal(title: "Change height") {
-                    HeightField(current: state.heightCm) { store.setHeight($0) }
-                }
             }
         } else {
             Panel(title: "The build", tag: "needs your height") {
                 Note("""
                     A target weight is meaningless without a height — the same 78 kg is lean on one frame \
-                    and soft on another. Type yours and this works out the weight band and the waist that \
-                    go with it.
+                    and soft on another. Set yours in Setup → You and this works out the weight band and \
+                    the waist that go with it.
                     """)
-                HeightField(current: state.heightCm) { store.setHeight($0) }
             }
         }
     }
@@ -341,21 +336,3 @@ private struct BuildPanel: View {
     }
 }
 
-/// Shared because the height field appears on both Progress and Setup — it is
-/// the input that unlocks the target, so it belongs where the target is, and
-/// it is configuration, so it belongs in Setup too.
-struct HeightField: View {
-    var current: Int?
-    var onSet: (Int) -> Void
-
-    var body: some View {
-        EntryField(placeholder: "your height, cm",
-                   buttonTitle: current == nil ? "Set height" : "Update",
-                   prominent: current == nil,
-                   keyboard: .numberPad) { text in
-            guard let value = Int(text), value >= Build.minHeight, value <= Build.maxHeight else { return false }
-            onSet(value)
-            return true
-        }
-    }
-}

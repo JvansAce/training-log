@@ -31,6 +31,15 @@ struct SetupView: View {
             startDateSection
             dangerZoneSection
         }
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            }
+        }
         .navigationTitle("Setup")
         .onAppear {
             startDate = DateKit.date(state.startDate) ?? Date()
@@ -309,6 +318,7 @@ private struct ValidatedRow: View {
     }
 
     private func commit() {
+        focused = false
         guard text != value else { return }
         if !onCommit(text) { text = value }
     }
