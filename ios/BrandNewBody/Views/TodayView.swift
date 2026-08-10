@@ -25,8 +25,10 @@ struct TodayView: View {
     @State private var editingDate: String? = nil
     @State private var showBackfillPicker = false
     @State private var backfillDate = Date()
+    @AppStorage(TodaySectionOrderStore.key) private var sectionOrderRaw = TodaySectionOrderStore.defaultRaw
 
     private var state: LogState { store.state }
+    private var sectionOrder: [TodaySection] { TodaySectionOrderStore.load(from: sectionOrderRaw) }
     private var viewingDow: Int { viewing ?? state.todayDow }
     /// Only today, or an explicitly back-filled day, can be written to.
     private var canEdit: Bool { editingDate != nil || viewingDow == state.todayDow }
@@ -42,21 +44,36 @@ struct TodayView: View {
             OffPanel(state: state, editing: editingDate != nil)
             DeloadPanel(state: state, editing: editingDate != nil)
 
-            if isViewingToday {
-                VitalsRow(state: state)
+            // Vitals, the session, Fuel and Mobility render in whatever
+            // order Setup → Today's order last saved — see
+            // TodaySectionOrder.swift. Nothing else on the page is
+            // reorderable: the hero, the backfill row and the time-off/
+            // deload banners are contextual chrome, not content someone
+            // would want to drag around.
+            ForEach(sectionOrder) { section in
+                sectionView(section)
             }
-
-            SessionPanel(state: state, dow: viewingDow, canEdit: canEdit,
-                         activeDate: activeDate, editingDate: editingDate,
-                         showWorkoutBanner: isViewingToday,
-                         onBackToToday: { viewing = nil; editingDate = nil })
-
-            FuelPanel(state: state, dow: viewingDow, canEdit: canEdit, activeDate: activeDate)
-            MobilityPanel(state: state, canEdit: canEdit, activeDate: activeDate)
 
             if editingDate == nil && TimeOff.today(state) == nil {
                 OffControl(state: state)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func sectionView(_ section: TodaySection) -> some View {
+        switch section {
+        case .vitals:
+            if isViewingToday { VitalsRow(state: state) }
+        case .session:
+            SessionPanel(state: state, dow: viewingDow, canEdit: canEdit,
+                         activeDate: activeDate, editingDate: editingDate,
+                         showWorkoutBanner: isViewingToday,
+                         onBackToToday: { viewing = nil; editingDate = nil })
+        case .fuel:
+            FuelPanel(state: state, dow: viewingDow, canEdit: canEdit, activeDate: activeDate)
+        case .mobility:
+            MobilityPanel(state: state, canEdit: canEdit, activeDate: activeDate)
         }
     }
 

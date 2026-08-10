@@ -25,6 +25,7 @@ struct SetupView: View {
         Form {
             iCloudSection
             whoopSection
+            todayLayoutSection
             backupSection
             youSection
             startDateSection
@@ -130,6 +131,23 @@ struct SetupView: View {
                     ? "Connected — no scored recovery yet today."
                     : "Recovery, strain, sleep, HRV and resting heart rate are read automatically each time you open the app.")
             }
+        }
+    }
+
+    // MARK: Today layout
+
+    private var todayLayoutSection: some View {
+        Section {
+            NavigationLink("Reorder Today's sections") {
+                TodaySectionOrderView()
+            }
+        } header: {
+            Text("Today")
+        } footer: {
+            Text("""
+                Move Vitals, the session, Fuel and Mobility into whatever order you actually use — \
+                mobility first if that's your habit, fuel last if you never check it.
+                """)
         }
     }
 
