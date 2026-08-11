@@ -495,3 +495,37 @@ struct EntryField: View {
         focused = false
     }
 }
+
+// MARK: - Keyboard
+
+extension View {
+    /// A Done button above the keyboard, for every field on the screen this
+    /// is attached to.
+    ///
+    /// Nearly every keyboard in this app is a keypad, and `.numberPad` and
+    /// `.decimalPad` have no return key at all — the `.submitLabel(.done)`
+    /// these fields carry is a no-op on them. That left tapping somewhere
+    /// else or dragging the scroll view as the only ways out, neither of
+    /// them discoverable, and both awkward when the keyboard is covering the
+    /// row being edited. The journal has the opposite problem: its Return key
+    /// types a newline, exactly as it should, so it needs a separate way out
+    /// too.
+    ///
+    /// This resigns first responder rather than clearing a particular
+    /// `FocusState`, which is what lets one bar at the top of a screen cover
+    /// fields several layers below it that own their own focus state — the
+    /// per-set lift inputs, the Mind minutes. SwiftUI syncs `@FocusState`
+    /// back to false when the responder resigns, so the commit-on-blur those
+    /// fields already do still fires.
+    func keyboardDoneBar() -> some View {
+        toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                    to: nil, from: nil, for: nil)
+                }
+            }
+        }
+    }
+}

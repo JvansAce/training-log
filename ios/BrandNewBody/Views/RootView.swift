@@ -103,6 +103,11 @@ struct RootView: View {
                     .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
+            // One bar here covers every field on Today, Week and Progress in
+            // both programmes — the weigh-in, the waist, every per-set kg and
+            // reps box, the Mind minutes, the session note and the journal.
+            // Setup is the other branch and brings its own.
+            .keyboardDoneBar()
         }
     }
 

@@ -32,14 +32,7 @@ struct SetupView: View {
             dangerZoneSection
         }
         .scrollDismissesKeyboard(.interactively)
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                }
-            }
-        }
+        .keyboardDoneBar()
         .navigationTitle("Setup")
         .onAppear {
             startDate = DateKit.date(state.startDate) ?? Date()
