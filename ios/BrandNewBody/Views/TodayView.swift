@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Reordered around one question: what does opening this screen at 6am in
 /// the gym actually need to happen fast?
@@ -476,6 +477,8 @@ private struct SessionPanel: View {
     /// Decided once per date rather than tracked live — see `syncCollapse`.
     @State private var collapsed = false
     @State private var collapsedFor = ""
+    /// Transient — just long enough to confirm the copy landed.
+    @State private var copiedExport = false
 
     private var day: TrainingDay { Plan.day(dow) }
     private var log: DayRecord { state.day(activeDate) }
@@ -533,6 +536,23 @@ private struct SessionPanel: View {
                             .foregroundStyle(Theme.muted)
                     }
                     .buttonStyle(.plain)
+                }
+            }
+
+            // Outside the collapse branch on purpose: it summarises the whole
+            // session, so it stays reachable once the checklist is tidied away.
+            // Only offered on a day you could edit — in a preview of another
+            // weekday `activeDate` is still today, and a Copy button sitting
+            // under Friday's plan that copies Tuesday's lifts is a trap.
+            if canEdit, let export = SessionExport.text(state, on: activeDate) {
+                ActionButton(title: copiedExport ? "Copied ✓" : "Copy for WHOOP") {
+                    UIPasteboard.general.string = export
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    copiedExport = true
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(1600))
+                        copiedExport = false
+                    }
                 }
             }
 

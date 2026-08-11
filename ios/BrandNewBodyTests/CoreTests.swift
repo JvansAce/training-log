@@ -12,6 +12,11 @@ final class CoreTests: XCTestCase {
     // A Thursday, chosen so week boundaries land mid-fixture rather than
     // conveniently.
     let today = "2026-08-06"
+    // The Tuesday and Saturday of the same week — Thursday's own plan has no
+    // loggable lifts at all, so anything about lifting needs a real training
+    // day to sit on.
+    let tuesday = "2026-08-04"
+    let saturday = "2026-08-08"
 
     func makeState() -> LogState {
         var state = LogState(today: today)
@@ -964,6 +969,65 @@ final class CoreTests: XCTestCase {
                                  mobility: ["mob-hang", "mob-squat"], note: "note")
         let data = try JSONEncoder().encode(original)
         XCTAssertEqual(try JSONDecoder().decode(DayRecord.self, from: data), original)
+    }
+
+    // MARK: - Session export
+
+    /// WHOOP has no public write endpoint for strength work, so this text and
+    /// the clipboard are the whole integration — it has to be unambiguous
+    /// enough to retype from.
+    func testSessionExportListsLiftsInSessionOrderWithSetsAndLoads() throws {
+        var state = makeState()
+        // Tuesday: row comes before dips in the day's own item order, so the
+        // export must too, regardless of insertion order here.
+        state.lifts["dips"] = [LiftRecord(date: tuesday, sets: [LiftSet(kg: -15, reps: 10)])]
+        state.lifts["row"] = [LiftRecord(date: tuesday, sets: [
+            LiftSet(kg: 60, reps: 10), LiftSet(kg: 60, reps: 8),
+        ])]
+
+        let text = try XCTUnwrap(SessionExport.text(state, on: tuesday))
+        let lines = text.split(separator: "\n").map(String.init)
+
+        XCTAssertEqual(lines.first, "Upper · Strength — \(tuesday)")
+        let rowIndex = try XCTUnwrap(lines.firstIndex { $0.hasPrefix("Barbell or DB row") })
+        let dipsIndex = try XCTUnwrap(lines.firstIndex { $0.contains("dips") })
+        XCTAssertLessThan(rowIndex, dipsIndex, "session order, not store order")
+
+        XCTAssertTrue(lines[rowIndex].contains("60 kg × 10 · 60 kg × 8"))
+        // Assistance survives into the export as assistance, both in the name
+        // and in the set notation.
+        XCTAssertTrue(lines[dipsIndex].hasPrefix("Assisted dips"), lines[dipsIndex])
+        XCTAssertTrue(lines[dipsIndex].contains("BW −15 kg × 10"))
+        // 60×10 + 60×8 = 1080; the assisted set carries no external load.
+        XCTAssertEqual(lines.last, "3 sets · 1080 kg total volume")
+    }
+
+    /// A session of nothing but bodyweight or assisted work reports its sets
+    /// and stays quiet about volume rather than claiming 0 kg.
+    func testSessionExportOmitsVolumeWhenNothingWasExternallyLoaded() throws {
+        var state = makeState()
+        state.lifts["dips"] = [LiftRecord(date: tuesday, sets: [LiftSet(reps: 12)])]
+        let text = try XCTUnwrap(SessionExport.text(state, on: tuesday))
+        XCTAssertEqual(text.split(separator: "\n").last.map(String.init), "1 set")
+    }
+
+    func testSessionExportIsNilWithNothingLogged() {
+        XCTAssertNil(SessionExport.text(makeState(), on: tuesday))
+    }
+
+    /// Read from the logged record, not the live cap, so a session exported
+    /// weeks later reports the rounds actually done that day.
+    func testSessionExportReportsThePyramidAsLogged() throws {
+        var state = makeState()
+        state.pyramidCap = 9                                    // today's cap, not that day's
+        state.pyramidLog[saturday] = PyramidRecord(cap: 4, vestKg: 5)
+        let text = try XCTUnwrap(SessionExport.text(state, on: saturday))
+        XCTAssertEqual(text.split(separator: "\n").first.map(String.init),
+                       "Lower + Pyramid — \(saturday)")
+        XCTAssertTrue(text.contains("rounds 1–4"), text)
+        XCTAssertTrue(text.contains("vest 5 kg"), text)
+        XCTAssertTrue(text.contains("10 pull-ups · 20 dips · 30 push-ups"), text)
+        XCTAssertTrue(text.contains("(150 reps)"), text)
     }
 
     func testEveryLoggableLiftHasAName() {
