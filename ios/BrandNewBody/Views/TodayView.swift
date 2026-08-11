@@ -701,12 +701,26 @@ private struct LiftRow: View {
     /// fresh — the caller may be flushing a day that's no longer the active
     /// one (switching away, or the app backgrounding) and has to name which
     /// day's edit it's rescuing.
+    ///
+    /// `setSets` fully replaces whatever was stored, so reconstructing the
+    /// array straight from `drafts` would delete a set the moment its reps
+    /// field is momentarily blank — which is exactly what backspacing to
+    /// retype a number looks like mid-keystroke. A forced flush (backgrounding,
+    /// switching days) can land in that exact gap, and the debounce alone
+    /// doesn't protect against it since it's bypassed on purpose for those
+    /// cases. Falling back to whatever this position already held keeps a
+    /// half-retyped set intact instead of silently dropping it; only a
+    /// position with nothing behind it yet — a fresh, still-blank `+ set` row —
+    /// is safe to drop, because there is nothing there to lose.
     private func flush(for date: String) {
         guard loadedFor == date else { return }
-        let sets = drafts.compactMap { draft -> LiftSet? in
-            guard let reps = Int(draft.reps), reps > 0 else { return nil }
-            let kg = Double(draft.kg.replacingOccurrences(of: ",", with: "."))
-            return LiftSet(kg: (kg ?? 0) > 0 ? kg : nil, reps: reps)
+        let existing = state.liftHistory(liftID).first { $0.date == date }?.sets ?? []
+        let sets = drafts.enumerated().compactMap { index, draft -> LiftSet? in
+            if let reps = Int(draft.reps), reps > 0 {
+                let kg = Double(draft.kg.replacingOccurrences(of: ",", with: "."))
+                return LiftSet(kg: (kg ?? 0) > 0 ? kg : nil, reps: reps)
+            }
+            return index < existing.count ? existing[index] : nil
         }
         store.setSets(sets, liftID: liftID, on: date)
     }
