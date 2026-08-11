@@ -34,6 +34,14 @@ public struct Exercise: Identifiable, Hashable, Sendable {
         self.isBarbell = isBarbell
         self.isBodyweight = isBodyweight
     }
+
+    /// `name` as written for anything else; for a bodyweight lift, adjusted
+    /// for whichever side of bodyweight it's currently logged on. See
+    /// `Lifts.displayName`.
+    public func displayName(_ state: LogState) -> String {
+        guard isBodyweight, let liftID else { return name }
+        return Lifts.displayName(state, id: liftID, base: name)
+    }
 }
 
 public struct TrainingDay: Identifiable, Sendable {
@@ -76,35 +84,62 @@ public enum Plan {
                 ]),
 
             TrainingDay(
-                dow: 2, label: "TU", colorHex: "E23B3B", title: "Upper · Strength", tag: "Rest 2–3 min",
-                note: "The heavy day. Add weight or a rep whenever you hit the top of the range.",
+                dow: 2, label: "TU", colorHex: "E23B3B", title: "Upper · Strength", tag: "Rest 2–3 min / 60–90s",
+                note: """
+                    The heavy day. Add weight or a rep whenever you hit the top of the range. That 2–3 min \
+                    rest is for the four main lifts — face pulls and lateral raises are fine at 60–90s.
+                    """,
                 restSeconds: 150,
                 items: [
                     Exercise(key: "tu-warm", name: "Band pull-aparts + arm circles", prescription: "warm-up 2×15"),
-                    Exercise(key: "tu-wpullup", name: "Weighted pull-ups", prescription: "4 × 5–8 — add weight at 8",
+                    Exercise(key: "tu-wpullup", name: "Pull-ups", prescription: "4 × 5–8 — add weight at 8",
                              rir: "1–3", liftID: "wpullup", isBodyweight: true),
-                    Exercise(key: "tu-incline", name: "Incline DB press", prescription: "4 × 8–10",
-                             rir: "1–2", liftID: "incline"),
-                    Exercise(key: "tu-row", name: "Barbell or DB row", prescription: "4 × 8–10",
+                    // Barbell or a machine over dumbbells here on purpose — DBs
+                    // get unwieldy to control at this low a rep count. Heavy
+                    // enough to actually be the strength day: strength cares
+                    // far less about proximity to failure than hypertrophy
+                    // does, so 2–3 RIR costs much less fatigue for a near-equal
+                    // strength return.
+                    Exercise(key: "tu-incline", name: "Incline press — barbell or machine", prescription: "4 × 4–6",
+                             rir: "2–3", liftID: "incline", isBarbell: true),
+                    Exercise(key: "tu-row", name: "Barbell or DB row", prescription: "3 × 8–10",
                              rir: "1–2", liftID: "row", isBarbell: true),
                     Exercise(key: "tu-ohp", name: "Overhead press", prescription: "3 × 8–10",
                              rir: "1–2", liftID: "ohp", isBarbell: true),
                     Exercise(key: "tu-dips", name: "Dips", prescription: "3 × 8–12", rir: "1–2", liftID: "dips",
                              isBodyweight: true),
+                    // Rear delts had almost no direct volume anywhere in the
+                    // week — the stated goal is side and rear shoulder, so
+                    // they need loading, not a warm-up band set. Placed here,
+                    // between the two presses, as the antagonist break the
+                    // heavy day was otherwise missing. Shares the `facepull`
+                    // id with Friday's version on purpose — one combined
+                    // history rather than two half-pictures.
+                    Exercise(key: "tu-facepull", name: "Face pulls or reverse fly",
+                             prescription: "3 × 12–15 — antagonist to the presses",
+                             rir: "0–2", liftID: "facepull"),
                     // Shares the `lat` id with Friday on purpose.
                     Exercise(key: "tu-lat", name: "Lateral raises", prescription: "3 × 12–15 — strict, no swing",
                              rir: "0–2", liftID: "lat"),
                 ]),
 
             TrainingDay(
-                dow: 3, label: "WE", colorHex: "E23B3B", title: "Lower · Strength", tag: "Rest 2–3 min",
-                note: "If Monday tennis left you wrecked, swap this with Tuesday.",
+                dow: 3, label: "WE", colorHex: "E23B3B", title: "Lower · Strength", tag: "Rest 2–3 min / 60–90s",
+                note: """
+                    If Monday tennis left you wrecked, swap this with Tuesday. 2–3 min on the squat/deadlift \
+                    and the RDL, 60–90s on everything after.
+                    """,
                 restSeconds: 150,
                 items: [
                     Exercise(key: "we-warm", name: "Leg swings · hip circles · 90/90", prescription: "warm-up 5 min"),
                     Exercise(key: "we-squat", name: "Squat or trap bar deadlift", prescription: "4 × 5–8",
                              rir: "1–3", liftID: "squat", isBarbell: true),
-                    Exercise(key: "we-rdl", name: "Romanian deadlift", prescription: "3 × 8–10",
+                    // Trap bar deadlift is already heavy hip extension — a full
+                    // RDL on top of it is two heavy hinges stacking on the same
+                    // lower back in one session. Squat doesn't have that overlap,
+                    // so it keeps the RDL at its full volume.
+                    Exercise(key: "we-rdl", name: "Romanian deadlift",
+                             prescription: "3 × 8–10 — only 2 sets (or swap for leg curl) if you did trap bar deadlift above",
                              rir: "1–2", liftID: "rdl", isBarbell: true),
                     // The RDL is pure hip extension. The short head of the biceps
                     // femoris only crosses the knee, so it barely works in any
@@ -129,12 +164,25 @@ public enum Plan {
                 ]),
 
             TrainingDay(
-                dow: 5, label: "FR", colorHex: "E23B3B", title: "Upper · Volume", tag: "Rest 60–90s",
-                note: "Chase the pump here. Side and rear delts are what make the suit fit — and they only get trained if you actually load them.",
-                restSeconds: 75,
+                dow: 5, label: "FR", colorHex: "E23B3B", title: "Upper · Volume", tag: "Rest ~2 min / 60–90s",
+                note: """
+                    Chase the pump here. Side and rear delts are what make the suit fit — and they only get \
+                    trained if you actually load them. Give pull-ups and the flat press closer to 2 min, \
+                    since they're still working near failure — everything after that is fine at 60–90s. \
+                    Never go under 60s: that's where the hypertrophy effect actually starts to suffer.
+                    """,
+                restSeconds: 90,
                 items: [
                     Exercise(key: "fr-warm", name: "Band pull-aparts", prescription: "warm-up 2×15"),
-                    Exercise(key: "fr-pullup", name: "Pull-ups", prescription: "4 × max reps", rir: "0",
+                    // Four sets to failure was expensive for a lift that,
+                    // assisted or not, still runs into the same session's
+                    // pressing and the next Upper day. The first two sets
+                    // stay controlled; only the last one goes all the way
+                    // down — hypertrophy's benefit from proximity to failure
+                    // flattens out well before every set is one, and the
+                    // fatigue cost doesn't.
+                    Exercise(key: "fr-pullup", name: "Pull-ups",
+                             prescription: "3 × max reps — first two @ 1–2 RIR, third set to failure",
                              liftID: "pullup", isBodyweight: true),
                     Exercise(key: "fr-flat", name: "Flat DB press", prescription: "4 × 10–12", rir: "1–2", liftID: "flat"),
                     Exercise(key: "fr-crow", name: "Cable or band row", prescription: "3 × 12", rir: "1–2", liftID: "crow"),
@@ -143,19 +191,30 @@ public enum Plan {
                     // no working volume anywhere in the week.
                     Exercise(key: "fr-facepull", name: "Face pulls",
                              prescription: "3 × 15 — load it, pause at the face", rir: "0–2", liftID: "facepull"),
-                    Exercise(key: "fr-arms", name: "Curls + triceps", prescription: "3 × 12 each",
+                    Exercise(key: "fr-arms", name: "Curls + triceps", prescription: "2 × 12 each",
                              rir: "0–1", liftID: "arms"),
                 ]),
 
             TrainingDay(
                 dow: 6, label: "SA", colorHex: "E23B3B", title: "Lower + Pyramid", tag: "Treat it as a session",
-                note: "The pyramid is a full session element, not an add-on. Alternate the two ways of progressing it: one week add a round, the next keep the same rounds and wear the vest.",
+                note: """
+                    The pyramid is a full session element, not an add-on — but it's conditioning and \
+                    durability work, not the main driver of muscle growth. That's what the lifts above are \
+                    for. Alternate the two ways of progressing it: one week add a round, the next keep the \
+                    same rounds and wear the vest. 2–3 min rest on the squat, 60–90s after.
+                    """,
                 restSeconds: 180,
                 items: [
-                    Exercise(key: "sa-fsquat", name: "Front or goblet squat", prescription: "4 × 8",
-                             rir: "1–2", liftID: "fsquat", isBarbell: true),
+                    Exercise(key: "sa-warm", name: "Dynamic warm-up + light hops",
+                             prescription: "leg swings · ankle bounces · 2×5 easy pogo hops"),
+                    // Explosive work belongs first, not after four heavy sets
+                    // of squats — jumping under pre-fatigue is exactly when
+                    // height drops and the set's own abort rule kicks in too
+                    // early to have been worth starting.
                     Exercise(key: "sa-boxjump", name: "Box jumps",
                              prescription: "4 × 6 explosive, full rest — stop the set if height drops", liftID: "boxjump"),
+                    Exercise(key: "sa-fsquat", name: "Front or goblet squat", prescription: "4 × 8",
+                             rir: "1–2", liftID: "fsquat", isBarbell: true),
                     // Saturday used to be entirely quad-dominant, which left the
                     // hamstrings and glutes on Wednesday alone. A hip extension
                     // here fixes the frequency without repeating Wednesday's hinge.
