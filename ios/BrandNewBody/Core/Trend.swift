@@ -114,10 +114,20 @@ public enum Trend {
     /// this exact lift's turn for a plateau. Together, sustained on both
     /// sides at once, they say which lever actually needs pulling.
     public static func stagnation(_ state: LogState) -> StagnationSignal? {
-        let trainedIDs = Plan.liftIDs.filter { !(state.lifts[$0] ?? []).isEmpty }
-        guard trainedIDs.count >= 3 else { return nil }
-        let stalled = trainedIDs.filter { Lifts.stall(state.liftHistory($0)) != nil }.count
-        guard Double(stalled) / Double(trainedIDs.count) >= stagnationLiftShare else { return nil }
+        // Only lifts that *could* register a stall belong in the ratio.
+        // `Lifts.stall` reads e1RM, which is nil for bodyweight and assisted
+        // work — so pull-ups and dips can never enter the numerator no matter
+        // how flat they go. Leaving them in the denominator meant three
+        // genuinely stalled barbell lifts read as "under half" purely because
+        // bodyweight work was also being logged, and the signal stayed silent
+        // exactly when it had the most to say. `Deload.performanceDeclining`
+        // already scopes its own share this way; this now matches it.
+        let candidates = Plan.liftIDs.filter { id in
+            state.liftHistory(id).compactMap { Lifts.bestE1rm($0) }.count >= Lifts.stallMinimumSessions
+        }
+        guard candidates.count >= 3 else { return nil }
+        let stalled = candidates.filter { Lifts.stall(state.liftHistory($0)) != nil }.count
+        guard Double(stalled) / Double(candidates.count) >= stagnationLiftShare else { return nil }
 
         switch verdict(state) {
         case .slow: return .bothStalled

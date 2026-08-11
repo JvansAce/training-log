@@ -92,16 +92,35 @@ public enum Plan {
                 restSeconds: 150,
                 items: [
                     Exercise(key: "tu-warm", name: "Band pull-aparts + arm circles", prescription: "warm-up 2×15"),
-                    Exercise(key: "tu-wpullup", name: "Pull-ups", prescription: "4 × 5–8 — add weight at 8",
+                    // "· heavy" is not decoration: this and Friday's pull-up are
+                    // separate liftIDs with separate histories on purpose, and
+                    // renaming this one from "Weighted pull-ups" to plain
+                    // "Pull-ups" — so `displayName` could prefix it correctly —
+                    // made the two indistinguishable everywhere `Plan.liftNames`
+                    // is what gets shown, notably the weekly "beaten this week"
+                    // list, which carries no day context to tell them apart.
+                    Exercise(key: "tu-wpullup", name: "Pull-ups · heavy",
+                             prescription: "4 × 5–8 — add weight at 8",
                              rir: "1–3", liftID: "wpullup", isBodyweight: true),
-                    // Barbell or a machine over dumbbells here on purpose — DBs
-                    // get unwieldy to control at this low a rep count. Heavy
-                    // enough to actually be the strength day: strength cares
-                    // far less about proximity to failure than hypertrophy
-                    // does, so 2–3 RIR costs much less fatigue for a near-equal
-                    // strength return.
-                    Exercise(key: "tu-incline", name: "Incline press — barbell or machine", prescription: "4 × 4–6",
-                             rir: "2–3", liftID: "incline", isBarbell: true),
+                    // Heavy enough to actually be the strength day: strength
+                    // cares far less about proximity to failure than
+                    // hypertrophy does, so 2–3 RIR costs much less fatigue for
+                    // a near-equal strength return.
+                    //
+                    // Deliberately still allows dumbbells, and deliberately
+                    // keeps the `incline` liftID. Naming this barbell-only and
+                    // flagging `isBarbell` would have asserted a change of
+                    // implement on a lift whose whole logged history is
+                    // per-dumbbell: the plate maths would read a 20 kg DB
+                    // entry as a 20 kg bar total, and a first barbell session
+                    // would land in the same history as a ~2× PR, spiking
+                    // e1RM and resetting the stall baseline. Switching
+                    // implement is the user's call to make knowingly — the
+                    // prescription says so — not something a plan revision
+                    // does silently underneath a year of numbers.
+                    Exercise(key: "tu-incline", name: "Incline press",
+                             prescription: "4 × 4–6 — barbell or machine is easier to control this heavy; DB is fine, but switching implement makes the logged numbers stop being comparable",
+                             rir: "2–3", liftID: "incline"),
                     Exercise(key: "tu-row", name: "Barbell or DB row", prescription: "3 × 8–10",
                              rir: "1–2", liftID: "row", isBarbell: true),
                     Exercise(key: "tu-ohp", name: "Overhead press", prescription: "3 × 8–10",

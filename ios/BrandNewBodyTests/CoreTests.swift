@@ -926,6 +926,20 @@ final class CoreTests: XCTestCase {
         }
     }
 
+    /// Two lift ids sharing a display name are indistinguishable everywhere
+    /// `Plan.liftNames` is what gets rendered — most sharply in the weekly
+    /// "beaten this week" list, which carries no day context at all, so a
+    /// collision there reads as the same lift listed twice. Renaming
+    /// Tuesday's heavy pull-up to plain "Pull-ups" (so `displayName` could
+    /// prefix it) collided it with Friday's, which is what this guards.
+    func testNoTwoLiftsShareADisplayName() {
+        let names = Plan.liftIDs.compactMap { Plan.liftNames[$0] }
+        XCTAssertEqual(Set(names).count, names.count,
+                       "duplicate lift display names: " +
+                       Dictionary(grouping: names, by: { $0 })
+                           .filter { $0.value.count > 1 }.keys.joined(separator: ", "))
+    }
+
     /// The round-trip the backup file depends on.
     func testLogStateSurvivesAJSONRoundTrip() throws {
         var state = makeState()
