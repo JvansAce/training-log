@@ -986,7 +986,7 @@ final class CoreTests: XCTestCase {
         ])]
 
         let text = try XCTUnwrap(SessionExport.text(state, on: tuesday))
-        let lines = text.split(separator: "\n").map(String.init)
+        let lines = text.split(separator: "\n").map { String($0) }
 
         XCTAssertEqual(lines.first, "Upper · Strength — \(tuesday)")
         let rowIndex = try XCTUnwrap(lines.firstIndex { $0.hasPrefix("Barbell or DB row") })
@@ -1008,7 +1008,7 @@ final class CoreTests: XCTestCase {
         var state = makeState()
         state.lifts["dips"] = [LiftRecord(date: tuesday, sets: [LiftSet(reps: 12)])]
         let text = try XCTUnwrap(SessionExport.text(state, on: tuesday))
-        XCTAssertEqual(text.split(separator: "\n").last.map(String.init), "1 set")
+        XCTAssertEqual(text.split(separator: "\n").last.map { String($0) }, "1 set")
     }
 
     func testSessionExportIsNilWithNothingLogged() {
@@ -1022,7 +1022,7 @@ final class CoreTests: XCTestCase {
         state.pyramidCap = 9                                    // today's cap, not that day's
         state.pyramidLog[saturday] = PyramidRecord(cap: 4, vestKg: 5)
         let text = try XCTUnwrap(SessionExport.text(state, on: saturday))
-        XCTAssertEqual(text.split(separator: "\n").first.map(String.init),
+        XCTAssertEqual(text.split(separator: "\n").first.map { String($0) },
                        "Lower + Pyramid — \(saturday)")
         XCTAssertTrue(text.contains("rounds 1–4"), text)
         XCTAssertTrue(text.contains("vest 5 kg"), text)

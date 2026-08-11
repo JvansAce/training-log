@@ -549,7 +549,9 @@ private struct SessionPanel: View {
                     UIPasteboard.general.string = export
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     copiedExport = true
-                    Task {
+                    // Explicitly main-actor: this touches `@State` after an
+                    // await, and a bare Task inherits no isolation.
+                    Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(1600))
                         copiedExport = false
                     }
