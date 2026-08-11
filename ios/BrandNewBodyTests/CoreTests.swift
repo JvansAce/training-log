@@ -137,6 +137,45 @@ final class CoreTests: XCTestCase {
         return state
     }
 
+    /// Three lifts with a peak over a month back, never beaten by any of the
+    /// three sessions since — `Lifts.stall`'s own condition, on every one of
+    /// them.
+    private func addStalledLifts(to state: inout LogState) {
+        for id in ["row", "ohp", "incline"] {
+            state.lifts[id] = [
+                LiftRecord(date: DateKit.adding(-40, to: today), sets: [LiftSet(kg: 70, reps: 5)]),
+                LiftRecord(date: DateKit.adding(-20, to: today), sets: [LiftSet(kg: 65, reps: 5)]),
+                LiftRecord(date: DateKit.adding(-10, to: today), sets: [LiftSet(kg: 65, reps: 5)]),
+                LiftRecord(date: DateKit.adding(-3, to: today), sets: [LiftSet(kg: 65, reps: 5)]),
+            ]
+        }
+    }
+
+    /// Neither series alone says whether the surplus needs adjusting or the
+    /// programming does — a slow rate with stalled lifts points outside the
+    /// programming entirely.
+    func testTrendStagnationDetectsBothStalled() {
+        var state = stateWithRate(0.2)   // .slow
+        addStalledLifts(to: &state)
+        XCTAssertEqual(Trend.stagnation(state), .bothStalled)
+    }
+
+    /// A normal gain rate with stalled lifts is the opposite read: food
+    /// isn't the problem.
+    func testTrendStagnationDetectsGainingWithoutProgress() {
+        var state = stateWithRate(0.6)   // .ok
+        addStalledLifts(to: &state)
+        XCTAssertEqual(Trend.stagnation(state), .gainingWithoutProgress)
+    }
+
+    /// One lift having its turn for a plateau isn't a signal — it takes a
+    /// real share of what's currently being trained.
+    func testTrendStagnationNeedsEnoughTrainedLifts() {
+        var state = stateWithRate(0.2)
+        state.lifts["row"] = [LiftRecord(date: today, sets: [LiftSet(kg: 60, reps: 8)])]
+        XCTAssertNil(Trend.stagnation(state))
+    }
+
     // MARK: - Fuel
 
     func testFuelIsComputedFromBodyweightWhenItCan() {
@@ -301,6 +340,22 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(items.contains { $0.isBarbell && $0.isBodyweight })
     }
 
+    /// "Weighted pull-ups" reads as a lie while still assisted, and plain
+    /// "Pull-ups" says nothing once load's been added — the name has to
+    /// track which side of bodyweight the lift is actually on.
+    func testDisplayNameReflectsAssistedBodyweightAndWeightedState() {
+        var state = makeState()
+        XCTAssertEqual(Lifts.displayName(state, id: "wpullup", base: "Pull-ups"), "Pull-ups",
+                       "no history yet — the base name stands")
+        state.lifts["wpullup"] = [LiftRecord(date: today, sets: [LiftSet(kg: -15, reps: 6)])]
+        XCTAssertEqual(Lifts.displayName(state, id: "wpullup", base: "Pull-ups"), "Assisted pull-ups")
+        state.lifts["wpullup"] = [LiftRecord(date: today, sets: [LiftSet(kg: 0, reps: 6)])]
+        XCTAssertEqual(Lifts.displayName(state, id: "wpullup", base: "Pull-ups"), "Pull-ups",
+                       "plain bodyweight — neither prefix applies")
+        state.lifts["wpullup"] = [LiftRecord(date: today, sets: [LiftSet(kg: 10, reps: 6)])]
+        XCTAssertEqual(Lifts.displayName(state, id: "wpullup", base: "Pull-ups"), "Weighted pull-ups")
+    }
+
     func testAssistancePrintsAsBodyweightMinusTheHelp() {
         XCTAssertEqual(Lifts.describe(LiftSet(kg: -15, reps: 8)), "BW −15 kg × 8")
         XCTAssertEqual(Lifts.describe(LiftSet(kg: -12.5, reps: 6)), "BW −12.5 kg × 6")
@@ -405,6 +460,38 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Pyramid.suggestedVestKg(state), 5.0)
     }
 
+    /// During today's own deload week, the pyramid logs a round lighter with
+    /// no vest — without ever touching the persisted, climbing cap itself.
+    func testPyramidDropsARoundAndTheVestDuringTodaysDeloadWeek() {
+        var state = makeState()
+        state.pyramidCap = 6
+        state.deloadLog = [today]
+        XCTAssertTrue(Pyramid.isDeloadedToday(state))
+        XCTAssertEqual(Pyramid.effectiveCap(state), 5)
+        XCTAssertFalse(Pyramid.itemName(state).contains("vest"))
+        // The persisted cap the +/– buttons move is untouched.
+        XCTAssertEqual(state.pyramidCap, 6)
+    }
+
+    /// A back-filled past Saturday happened under whatever was actually
+    /// prescribed that week — hindsight from today's deload must not rewrite
+    /// what gets logged for it.
+    func testPyramidDeloadReductionNeverAppliesToABackFilledDay() {
+        var state = makeState()
+        state.pyramidCap = 6
+        state.deloadLog = [today]
+        let yesterday = DateKit.adding(-1, to: today)
+        XCTAssertFalse(Pyramid.isDeloadedToday(state, on: yesterday))
+        XCTAssertEqual(Pyramid.effectiveCap(state, on: yesterday), 6)
+    }
+
+    func testNoDeloadMeansThePyramidCapIsUntouched() {
+        var state = makeState()
+        state.pyramidCap = 6
+        XCTAssertFalse(Pyramid.isDeloadedToday(state))
+        XCTAssertEqual(Pyramid.effectiveCap(state), 6)
+    }
+
     // MARK: - Consistency
 
     private func fillSessions(_ state: inout LogState, from: String, to: String, perWeek: Int) {
@@ -506,6 +593,11 @@ final class CoreTests: XCTestCase {
 
     private func withRecovery(_ values: [Int]) -> LogState {
         var state = makeState()
+        // Clear of the calendar-based backstop (Deload.blockWeeks) so these
+        // stay a test of the recovery signal specifically, not an incidental
+        // trip over a second trigger `makeState`'s fixed start date happens
+        // to sit past.
+        state.startDate = DateKit.adding(-14, to: today)
         for (offset, value) in values.enumerated() {
             state.recovery[DateKit.adding(-(offset + 1), to: today)] = RecoveryRecord(recovery: value)
         }
@@ -567,6 +659,51 @@ final class CoreTests: XCTestCase {
         var state = makeState()
         state.deloadLog = [DateKit.adding(30, to: today)]
         XCTAssertFalse(Deload.inDeloadWeek(state))
+    }
+
+    /// Anyone without WHOOP or manual recovery entries would otherwise never
+    /// see a deload signal at all — the calendar backstop is what catches
+    /// them. `makeState`'s own fixed start date sits 94 days back, well past
+    /// the block window, and there is no recovery data logged at all here.
+    func testDeloadFiresOnTheCalendarAloneWithNoRecoveryData() {
+        let state = makeState()
+        XCTAssertEqual(Deload.signal(state)?.kind, .calendar)
+    }
+
+    func testCalendarDeloadStaysQuietBeforeTheBlockWindowCloses() {
+        var state = makeState()
+        state.startDate = DateKit.adding(-14, to: today)
+        XCTAssertNil(Deload.signal(state))
+    }
+
+    /// Two sessions running of a worse best set at the same prescription,
+    /// across half or more of the currently-trained lifts, is fatigue
+    /// outrunning recovery even when the recovery data itself hasn't caught
+    /// up yet.
+    func testDeloadFiresOnDecliningPerformanceAcrossMainLifts() {
+        var state = makeState()
+        state.startDate = DateKit.adding(-14, to: today)
+        for id in ["row", "ohp", "incline"] {
+            state.lifts[id] = [
+                LiftRecord(date: DateKit.adding(-14, to: today), sets: [LiftSet(kg: 60, reps: 8)]),
+                LiftRecord(date: DateKit.adding(-7, to: today), sets: [LiftSet(kg: 57.5, reps: 8)]),
+                LiftRecord(date: DateKit.adding(-1, to: today), sets: [LiftSet(kg: 55, reps: 8)]),
+            ]
+        }
+        XCTAssertEqual(Deload.signal(state)?.kind, .performance)
+    }
+
+    func testDeloadStaysQuietWhenPerformanceIsStillClimbing() {
+        var state = makeState()
+        state.startDate = DateKit.adding(-14, to: today)
+        for id in ["row", "ohp", "incline"] {
+            state.lifts[id] = [
+                LiftRecord(date: DateKit.adding(-14, to: today), sets: [LiftSet(kg: 55, reps: 8)]),
+                LiftRecord(date: DateKit.adding(-7, to: today), sets: [LiftSet(kg: 57.5, reps: 8)]),
+                LiftRecord(date: DateKit.adding(-1, to: today), sets: [LiftSet(kg: 60, reps: 8)]),
+            ]
+        }
+        XCTAssertNil(Deload.signal(state))
     }
 
     // MARK: - Build
