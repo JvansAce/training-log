@@ -18,11 +18,11 @@ const SCHEDULE = {
   2:{label:'TU',color:'#E23B3B',title:'Upper · Strength',tag:'Rest 2–3 min',restSec:150,
      note:'The heavy day. Add weight or a rep whenever you hit the top of the range.',
      items:[{k:'tu-warm',n:'Band pull-aparts + arm circles',p:'warm-up 2×15'},
-            {k:'tu-wpullup',rir:'1–3',n:'Weighted pull-ups',p:'4 × 5–8 — add weight at 8',id:'wpullup'},
+            {k:'tu-wpullup',rir:'1–3',bw:true,n:'Weighted pull-ups',p:'4 × 5–8 — add weight at 8',id:'wpullup'},
             {k:'tu-incline',rir:'1–2',n:'Incline DB press',p:'4 × 8–10',id:'incline'},
             {k:'tu-row',rir:'1–2',bar:true,n:'Barbell or DB row',p:'4 × 8–10',id:'row'},
             {k:'tu-ohp',rir:'1–2',bar:true,n:'Overhead press',p:'3 × 8–10',id:'ohp'},
-            {k:'tu-dips',rir:'1–2',n:'Dips',p:'3 × 8–12',id:'dips'},
+            {k:'tu-dips',rir:'1–2',bw:true,n:'Dips',p:'3 × 8–12',id:'dips'},
             // Shares the 'lat' id with Friday on purpose: one combined
             // progression history rather than two half-pictures.
             {k:'tu-lat',rir:'0–2',n:'Lateral raises',p:'3 × 12–15 — strict, no swing',id:'lat'}]},
@@ -45,7 +45,7 @@ const SCHEDULE = {
   5:{label:'FR',color:'#E23B3B',title:'Upper · Volume',tag:'Rest 60–90s',restSec:75,
      note:'Chase the pump here. Side and rear delts are what make the suit fit — and they only get trained if you actually load them.',
      items:[{k:'fr-warm',n:'Band pull-aparts',p:'warm-up 2×15'},
-            {k:'fr-pullup',rir:'0',n:'Pull-ups',p:'4 × max reps',id:'pullup'},
+            {k:'fr-pullup',rir:'0',bw:true,n:'Pull-ups',p:'4 × max reps',id:'pullup'},
             {k:'fr-flat',rir:'1–2',n:'Flat DB press',p:'4 × 10–12',id:'flat'},
             {k:'fr-crow',rir:'1–2',n:'Cable or band row',p:'3 × 12',id:'crow'},
             {k:'fr-lat',rir:'0–1',n:'Lateral raises',p:'4 × 15',id:'lat'},
@@ -551,8 +551,24 @@ function verdict(){
   return {cls, html:`<b>${r>0?'+':''}${r.toFixed(2)} kg / month</b> over the last ${Math.round(t.days)} days. ${tail}${held}`};
 }
 const weeksIn = () => Math.max(0,Math.floor((new Date(todayISO)-new Date(S.startDate))/6048e5));
-const fmtSet = e => `${e.kg?e.kg+' kg':'BW'} × ${e.reps}`;
+/* Load is signed. A pull-up or a dip starts at your own bodyweight, so the
+   only way to make one easier is to take weight off — a band, or an assist
+   machine — and that is a negative number: -15 kg means 15 kg of help.
+   Zero and null both mean plain bodyweight, which is why 0 is normalised
+   away on save rather than stored as a load of nothing. */
+const fmtLoad = kg => kg==null||kg===0 ? 'bodyweight'
+  : kg<0 ? `${-kg} kg assist` : `${kg} kg`;
+const fmtSet = e => `${e.kg>0?e.kg+' kg':e.kg<0?`BW −${-e.kg} kg`:'BW'} × ${e.reps}`;
+// Signed load orders correctly on its own: -10 kg beats -15 kg (less help),
+// and plain bodyweight beats both.
 const beats = (a,b) => ((a.kg||0)*1000+a.reps) > ((b.kg||0)*1000+b.reps);
+/* Only lifts whose base load IS the body can go negative. A barbell row
+   cannot be loaded below an empty bar, and "BW −15 kg" would be a lie
+   about what was done. */
+const ASSIST_IDS = new Set(Object.values(SCHEDULE)
+  .flatMap(d=>d.items).filter(it=>it.bw&&it.id).map(it=>it.id));
+const allowsAssist = id => ASSIST_IDS.has(id);
+const MAX_ASSIST = 100;   // deepest assistance the input will take, kg
 const escapeHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const MAX_SETS = 5;
 
@@ -569,9 +585,10 @@ function bestSet(entry){
   const sets=setsOf(entry);
   return sets.length ? sets.reduce((a,b)=>beats(b,a)?b:a) : null;
 }
-/* Work done in one session. Bodyweight sets carry no load, so kg-volume
-   would read 0 and look like nothing happened — report total reps for
-   those instead and let the caller label it. */
+/* Work done in one session. Bodyweight and assisted sets carry no external
+   load, so kg-volume would read 0 (or negative) and look like nothing
+   happened — report total reps for those instead and let the caller
+   label it. */
 function volumeOf(entry){
   const sets=setsOf(entry);
   const reps=sets.reduce((n,s)=>n+(s.reps||0),0);
@@ -580,10 +597,12 @@ function volumeOf(entry){
   return {reps, kg:Math.round(weighted.reduce((n,s)=>n+s.kg*(s.reps||0),0))};
 }
 const fmtVolume = v => v.kg!=null ? `${v.kg} kg vol` : `${v.reps} reps`;
-/* Epley. Only meaningful for loaded sets, and it drifts badly at very high
-   reps, so cap where the formula still says something useful. */
+/* Epley. Only meaningful for externally loaded sets — an assisted set's
+   real one-rep max is a fraction of a bodyweight this formula knows
+   nothing about — and it drifts badly at very high reps, so cap where the
+   formula still says something useful. */
 function e1rm(set){
-  if(!set || set.kg==null || !set.kg || !set.reps || set.reps>15) return null;
+  if(!set || !(set.kg>0) || !set.reps || set.reps>15) return null;
   return set.kg*(1+set.reps/30);
 }
 const bestE1rm = entry => e1rm(bestSet(entry));
@@ -691,7 +710,7 @@ function parseScheme(p){
 }
 /* Conservative, and smaller for light lifts: +2.5 kg on a 10 kg lateral
    raise is a 25% jump, which is not a progression, it is a new exercise. */
-const loadStep = kg => kg < 15 ? 1 : 2.5;
+const loadStep = kg => Math.abs(kg) < 15 ? 1 : 2.5;
 
 /* The program says "add weight or a rep whenever you hit the top of the
    range". This works out what that means for this lift, today, instead of
@@ -718,11 +737,15 @@ function nextTarget(id, activeDate, prescription){
   if(gap >= LIFT_LAYOFF){
     if(kg==null) return { text:`${gap} days since this one — repeat it before chasing reps`, kg:null };
     if(gap >= LIFT_LAYOFF_LONG){
-      const back = Math.max(loadStep(kg), Math.round(kg * 0.1 / loadStep(kg)) * loadStep(kg));
-      const to = Math.max(loadStep(kg), kg - back);
-      return { text:`${gap} days off this lift — open at <b>${to} kg</b> and climb back`, kg:to };
+      const step = loadStep(kg);
+      const back = Math.max(step, Math.round(Math.abs(kg) * 0.1 / step) * step);
+      // Backing off means less load, which on an assisted lift means more
+      // help from the band rather than less — so the step goes the same
+      // direction either way and only the loaded side has a floor.
+      const to = kg > 0 ? Math.max(step, kg - back) : kg - back;
+      return { text:`${gap} days off this lift — open at <b>${fmtLoad(to)}</b> and climb back`, kg:to };
     }
-    return { text:`${gap} days since this one — repeat <b>${kg} kg</b> before adding`, kg };
+    return { text:`${gap} days since this one — repeat <b>${fmtLoad(kg)}</b> before adding`, kg };
   }
 
   // Every working set at or above the top of the range is the condition the
@@ -730,12 +753,14 @@ function nextTarget(id, activeDate, prescription){
   // that fell apart.
   if(minReps >= sch.hi){
     if(kg==null) return { text:`all sets at ${sch.hi} — time to add load`, kg:null };
+    // Adding load to an assisted lift means taking help away, so the same
+    // addition walks -15 up through -14 to bodyweight and on into weight.
     const next = kg + loadStep(kg);
-    return { text:`hit ${sch.hi}s — go <b>${next} kg</b> × ${sch.lo}`, kg:next };
+    return { text:`hit ${sch.hi}s — go <b>${fmtLoad(next)}</b> × ${sch.lo}`, kg:next };
   }
   const target = Math.min(minReps+1, sch.hi);
   if(kg==null) return { text:`chase ${target} reps`, kg:null };
-  return { text:`stay ${kg} kg — chase ${target} reps`, kg };
+  return { text:`stay ${fmtLoad(kg)} — chase ${target} reps`, kg };
 }
 
 /* Plate maths for a barbell, per side. Anything the available plates cannot
@@ -753,10 +778,15 @@ function platesFor(total, bar){
 }
 
 function setRowHtml(id,i,s){
+  // inputmode stays decimal on the assisted lifts: the numeric keypads that
+  // matter still expose a minus, and text mode would lose the decimal point
+  // for the far more common half-kilo entry.
+  const assist = allowsAssist(id);
   return `<div class="setrow" data-set="${i}">
     <span class="setno">${i+1}</span>
-    <input type="number" step="0.5" min="0" max="500" inputmode="decimal" placeholder="kg"
-      value="${s&&s.kg!=null?s.kg:''}" data-skg="${id}:${i}" aria-label="Set ${i+1} weight kg">
+    <input type="number" step="0.5" min="${assist?-MAX_ASSIST:0}" max="500" inputmode="decimal" placeholder="kg"
+      value="${s&&s.kg!=null?s.kg:''}" data-skg="${id}:${i}"
+      aria-label="Set ${i+1} weight kg${assist?', negative for assistance':''}">
     <span class="mult">×</span>
     <input type="number" step="1" min="1" max="500" inputmode="numeric" placeholder="reps"
       value="${s&&s.reps!=null?s.reps:''}" data-srep="${id}:${i}" aria-label="Set ${i+1} reps">
@@ -777,9 +807,15 @@ function logRow(id,canEdit,activeDate,item){
   const working = mySets.find(x=>x.kg!=null)?.kg ?? (tgt && tgt.kg);
   const plates = item && item.bar ? platesFor(working, bar) : null;
 
+  // Nobody guesses that a weight field takes a negative, so say it once —
+  // on the lifts where it applies, until there is history proving it landed.
+  const hint = allowsAssist(id) && !(S.lifts[id]||[]).length
+    ? `<div class="plates">band or machine helping? log the help as a minus — <b>−15</b> is 15 kg off you</div>` : '';
+
   return `<div class="logrow" data-log="${id}">
     <div class="setrows">${rows.join('')}</div>
     ${shown<MAX_SETS?`<button type="button" class="addset" data-addset="${id}">+ set</button>`:''}
+    ${hint}
     ${tgt?`<div class="target">→ ${tgt.text}</div>`:''}
     ${plates?`<div class="plates">${working} kg = ${bar} bar + ${plates} <span>per side</span></div>`:''}
     <div class="logref">${refText(id,activeDate)}</div>
@@ -2588,7 +2624,10 @@ function wireToday(){
       const reps=parseInt(sr.querySelector('[data-srep]').value);
       if(!isNaN(reps)&&reps>0){
         const kg=kgRaw===''?null:parseFloat(kgRaw);
-        sets.push({kg:isNaN(kg)?null:kg, reps});
+        // A typed 0 is bodyweight, not a load of nothing: stored as 0 it
+        // would read as "0 kg × 8" and drag a meaningless point through the
+        // e1RM maths. Negatives are kept as typed — that is assistance.
+        sets.push({kg:isNaN(kg)||kg===0?null:kg, reps});
       }
     });
     S.lifts[id]=(S.lifts[id]||[]).filter(x=>x.d!==activeDate);

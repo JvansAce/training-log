@@ -18,15 +18,21 @@ public struct Exercise: Identifiable, Hashable, Sendable {
     public let liftID: String?
     /// Barbell lift, so the plate maths is worth showing.
     public let isBarbell: Bool
+    /// The lift is loaded by your own body, so load can go negative: a band
+    /// or an assist machine taking weight off. Nothing else can — a barbell
+    /// row does not go below an empty bar.
+    public let isBodyweight: Bool
 
     public init(key: String, name: String, prescription: String = "",
-                rir: String? = nil, liftID: String? = nil, isBarbell: Bool = false) {
+                rir: String? = nil, liftID: String? = nil, isBarbell: Bool = false,
+                isBodyweight: Bool = false) {
         self.key = key
         self.name = name
         self.prescription = prescription
         self.rir = rir
         self.liftID = liftID
         self.isBarbell = isBarbell
+        self.isBodyweight = isBodyweight
     }
 }
 
@@ -76,14 +82,15 @@ public enum Plan {
                 items: [
                     Exercise(key: "tu-warm", name: "Band pull-aparts + arm circles", prescription: "warm-up 2×15"),
                     Exercise(key: "tu-wpullup", name: "Weighted pull-ups", prescription: "4 × 5–8 — add weight at 8",
-                             rir: "1–3", liftID: "wpullup"),
+                             rir: "1–3", liftID: "wpullup", isBodyweight: true),
                     Exercise(key: "tu-incline", name: "Incline DB press", prescription: "4 × 8–10",
                              rir: "1–2", liftID: "incline"),
                     Exercise(key: "tu-row", name: "Barbell or DB row", prescription: "4 × 8–10",
                              rir: "1–2", liftID: "row", isBarbell: true),
                     Exercise(key: "tu-ohp", name: "Overhead press", prescription: "3 × 8–10",
                              rir: "1–2", liftID: "ohp", isBarbell: true),
-                    Exercise(key: "tu-dips", name: "Dips", prescription: "3 × 8–12", rir: "1–2", liftID: "dips"),
+                    Exercise(key: "tu-dips", name: "Dips", prescription: "3 × 8–12", rir: "1–2", liftID: "dips",
+                             isBodyweight: true),
                     // Shares the `lat` id with Friday on purpose.
                     Exercise(key: "tu-lat", name: "Lateral raises", prescription: "3 × 12–15 — strict, no swing",
                              rir: "0–2", liftID: "lat"),
@@ -127,7 +134,8 @@ public enum Plan {
                 restSeconds: 75,
                 items: [
                     Exercise(key: "fr-warm", name: "Band pull-aparts", prescription: "warm-up 2×15"),
-                    Exercise(key: "fr-pullup", name: "Pull-ups", prescription: "4 × max reps", rir: "0", liftID: "pullup"),
+                    Exercise(key: "fr-pullup", name: "Pull-ups", prescription: "4 × max reps", rir: "0",
+                             liftID: "pullup", isBodyweight: true),
                     Exercise(key: "fr-flat", name: "Flat DB press", prescription: "4 × 10–12", rir: "1–2", liftID: "flat"),
                     Exercise(key: "fr-crow", name: "Cable or band row", prescription: "3 × 12", rir: "1–2", liftID: "crow"),
                     Exercise(key: "fr-lat", name: "Lateral raises", prescription: "4 × 15", rir: "0–1", liftID: "lat"),

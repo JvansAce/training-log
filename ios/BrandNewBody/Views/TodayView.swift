@@ -608,6 +608,7 @@ private struct LiftRow: View {
                             .foregroundStyle(Theme.muted)
                             .frame(width: 12)
                         numberField("kg", text: $drafts[index].kg)
+                        if item.isBodyweight { signToggle(index) }
                         Text("×").foregroundStyle(Theme.muted)
                         numberField("reps", text: $drafts[index].reps)
                     }
@@ -619,6 +620,15 @@ private struct LiftRow: View {
                             .foregroundStyle(Theme.muted)
                     }
                     .buttonStyle(.plain)
+                }
+                // Nobody guesses that a weight field takes a negative, so say
+                // it once — on the lifts where it applies, and only until
+                // there is history proving it landed.
+                if item.isBodyweight, state.liftHistory(liftID).isEmpty {
+                    Text("band or machine helping? tap ± and log the help as a minus")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let target = Lifts.nextTarget(state, id: liftID, on: activeDate,
@@ -672,6 +682,27 @@ private struct LiftRow: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
     }
 
+    /// The decimal keypad has no minus key, so assistance needs a way in of
+    /// its own. This flips the sign of whatever is in the field — including an
+    /// empty one, so it can be tapped first and the number typed after.
+    private func signToggle(_ index: Int) -> some View {
+        let negative = drafts[index].kg.hasPrefix("-")
+        return Button {
+            if negative { drafts[index].kg.removeFirst() }
+            else { drafts[index].kg = "-" + drafts[index].kg }
+        } label: {
+            Text("±")
+                .font(Theme.mono(13, weight: .bold))
+                .foregroundStyle(negative ? Theme.amber : Theme.muted)
+                .frame(width: 30, height: 34)
+                .background(Theme.raise, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8)
+                    .stroke(negative ? Theme.amber : Theme.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(negative ? "Assisted, tap for added weight" : "Added weight, tap for assistance")
+    }
+
     private func platesText(_ target: Lifts.Target) -> String? {
         let working = drafts.compactMap { Double($0.kg.replacingOccurrences(of: ",", with: ".")) }.first
             ?? target.kg
@@ -717,8 +748,13 @@ private struct LiftRow: View {
         let existing = state.liftHistory(liftID).first { $0.date == date }?.sets ?? []
         let sets = drafts.enumerated().compactMap { index, draft -> LiftSet? in
             if let reps = Int(draft.reps), reps > 0 {
-                let kg = Double(draft.kg.replacingOccurrences(of: ",", with: "."))
-                return LiftSet(kg: (kg ?? 0) > 0 ? kg : nil, reps: reps)
+                // Zero and nil both mean bodyweight — a stored 0 would read as
+                // "0 kg × 8" and drag a meaningless point through the e1RM
+                // maths. A negative is assistance, and only means anything on
+                // a lift whose base load is the body.
+                let typed = Double(draft.kg.replacingOccurrences(of: ",", with: ".")) ?? 0
+                let load = item.isBodyweight ? typed : max(typed, 0)
+                return LiftSet(kg: load == 0 ? nil : load, reps: reps)
             }
             return index < existing.count ? existing[index] : nil
         }

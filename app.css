@@ -116,6 +116,9 @@ body{
 .logref{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:5px;text-align:right}
 .ex.on .logrow,.ex.on .logref{opacity:.42}
 .logrow input.saved{border-color:var(--green)}
+/* Out of range — a negative typed into a lift that can't be assisted, or a
+   load past the max. Silently dropping it would be worse than showing it. */
+.logrow input:invalid{border-color:var(--red)}
 .up{color:var(--green)}
 
 /* pyramid vest */

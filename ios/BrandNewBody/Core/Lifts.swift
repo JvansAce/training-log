@@ -25,7 +25,8 @@ public enum Lifts {
     // MARK: - Set arithmetic
 
     /// Ordering used for "which of these two sets is better": load dominates,
-    /// reps break the tie.
+    /// reps break the tie. Load is signed, and that orders correctly on its
+    /// own — -10 kg (less help) beats -15 kg, and plain bodyweight beats both.
     public static func beats(_ a: LiftSet, _ b: LiftSet) -> Bool {
         ((a.kg ?? 0) * 1000 + Double(a.reps)) > ((b.kg ?? 0) * 1000 + Double(b.reps))
     }
@@ -37,13 +38,14 @@ public enum Lifts {
 
     public struct Volume: Equatable, Sendable {
         public var reps: Int
-        /// nil for a session of pure bodyweight work.
+        /// nil for a session of pure bodyweight or assisted work.
         public var kg: Int?
     }
 
-    /// Work done in one session. Bodyweight sets carry no load, so kg-volume
-    /// would read 0 and look like nothing happened — report total reps for
-    /// those instead and let the caller label it.
+    /// Work done in one session. Bodyweight and assisted sets carry no
+    /// external load, so kg-volume would read 0 — or negative — and look
+    /// like nothing happened, or like work done in reverse. Report total reps
+    /// for those instead and let the caller label it.
     public static func volume(_ record: LiftRecord?) -> Volume {
         let sets = record?.sets ?? []
         let reps = sets.reduce(0) { $0 + $1.reps }
@@ -53,8 +55,10 @@ public enum Lifts {
         return Volume(reps: reps, kg: Int(load.rounded()))
     }
 
-    /// Epley. Only meaningful for loaded sets, and it drifts badly at very
-    /// high reps, so this caps where the formula still says something useful.
+    /// Epley. Only meaningful for externally loaded sets — an assisted set's
+    /// real one-rep max is a fraction of a bodyweight this formula knows
+    /// nothing about — and it drifts badly at very high reps, so this caps
+    /// where the formula still says something useful.
     public static func e1rm(_ set: LiftSet?) -> Double? {
         guard let set, let kg = set.kg, kg > 0, set.reps > 0, set.reps <= 15 else { return nil }
         return kg * (1 + Double(set.reps) / 30)
@@ -100,7 +104,17 @@ public enum Lifts {
     /// Conservative, and smaller for light lifts: +2.5 kg on a 10 kg lateral
     /// raise is a 25% jump, which is not a progression, it is a new exercise.
     public static func loadStep(_ kg: Double) -> Double {
-        kg < 15 ? 1 : 2.5
+        abs(kg) < 15 ? 1 : 2.5
+    }
+
+    /// A pull-up or a dip starts at your own bodyweight, so the only way to
+    /// make one easier is to take weight off — a band, or an assist machine —
+    /// and that is a negative load: -15 kg means 15 kg of help. Zero and nil
+    /// both mean plain bodyweight, which is why a typed 0 is normalised away
+    /// on save rather than stored as a load of nothing.
+    public static func describeLoad(_ kg: Double?) -> String {
+        guard let kg, kg != 0 else { return "bodyweight" }
+        return kg < 0 ? "\(fmt(-kg)) kg assist" : "\(fmt(kg)) kg"
     }
 
     // MARK: - The target
@@ -137,11 +151,16 @@ public enum Lifts {
             }
             if gap >= longLayoffDays {
                 let step = loadStep(kg)
-                let back = max(step, (kg * 0.1 / step).rounded() * step)
-                let to = max(step, kg - back)
-                return Target(text: "\(gap) days off this lift — open at \(fmt(to)) kg and climb back", kg: to)
+                let back = max(step, (abs(kg) * 0.1 / step).rounded() * step)
+                // Backing off means less load, which on an assisted lift means
+                // more help from the band rather than less — so the step goes
+                // the same direction either way and only the loaded side has
+                // a floor.
+                let to = kg > 0 ? max(step, kg - back) : kg - back
+                return Target(text: "\(gap) days off this lift — open at \(describeLoad(to)) and climb back",
+                              kg: to)
             }
-            return Target(text: "\(gap) days since this one — repeat \(fmt(kg)) kg before adding", kg: kg)
+            return Target(text: "\(gap) days since this one — repeat \(describeLoad(kg)) before adding", kg: kg)
         }
 
         // Every working set at or above the top of the range is the condition
@@ -151,13 +170,16 @@ public enum Lifts {
             guard let kg else {
                 return Target(text: "all sets at \(scheme.high) — time to add load", kg: nil)
             }
+            // Adding load to an assisted lift means taking help away, so the
+            // same addition walks -15 up through -14 to bodyweight and on
+            // into weight.
             let next = kg + loadStep(kg)
-            return Target(text: "hit \(scheme.high)s — go \(fmt(next)) kg × \(scheme.low)", kg: next)
+            return Target(text: "hit \(scheme.high)s — go \(describeLoad(next)) × \(scheme.low)", kg: next)
         }
 
         let target = min(minReps + 1, scheme.high)
         guard let kg else { return Target(text: "chase \(target) reps", kg: nil) }
-        return Target(text: "stay \(fmt(kg)) kg — chase \(target) reps", kg: kg)
+        return Target(text: "stay \(describeLoad(kg)) — chase \(target) reps", kg: kg)
     }
 
     // MARK: - Plates
@@ -231,7 +253,8 @@ public enum Lifts {
     }
 
     public static func describe(_ set: LiftSet) -> String {
-        guard let kg = set.kg, kg > 0 else { return "BW × \(set.reps)" }
+        guard let kg = set.kg, kg != 0 else { return "BW × \(set.reps)" }
+        if kg < 0 { return "BW −\(fmt(-kg)) kg × \(set.reps)" }
         return "\(fmt(kg)) kg × \(set.reps)"
     }
 
