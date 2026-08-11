@@ -16,6 +16,14 @@ final class AppStore {
 
     private(set) var state: LogState
     private let context: ModelContext
+    /// Coalesces a burst of remote-change notifications — a CloudKit sync
+    /// catching up after the app was offline can post several in quick
+    /// succession — into the one `reload()` that actually matters, the
+    /// state once they've all landed. Each `reload()` re-fetches all ten
+    /// SwiftData model types; firing it once per notification is the same
+    /// waste a keystroke-triggered reload would have been, and this reuses
+    /// the same `Debouncer` that fix uses.
+    private var remoteChangeDebouncer = Debouncer()
 
     /// Set when the container fell back to a local-only store — the app still
     /// works, but Setup needs to say that iCloud isn't carrying the data.
@@ -209,10 +217,17 @@ final class AppStore {
         // which posts this. Belt and braces with the foreground refresh in the
         // scene phase handler: the notification is best-effort, and a phone
         // that was asleep during the push gets nothing.
+        //
+        // A sync catching up after time offline can post several of these in
+        // a row — debounced through remoteChangeDebouncer so that lands as
+        // one reload() once they've settled, not one per notification.
         NotificationCenter.default.addObserver(
             forName: .NSPersistentStoreRemoteChange, object: nil, queue: nil
         ) { _ in
-            Task { @MainActor [weak self] in self?.reload() }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.remoteChangeDebouncer.schedule { [weak self] in self?.reload() }
+            }
         }
     }
 
