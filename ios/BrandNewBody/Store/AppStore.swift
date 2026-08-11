@@ -89,11 +89,42 @@ final class AppStore {
         next.waist = fetch(WaistEntry.self).map {
             WaistRecord(date: $0.date, cm: $0.cm)
         }
+        // Neither model carries a unique constraint — CloudKit's mirror
+        // doesn't support one, so two devices logging the same day (or the
+        // same lift on the same day) offline can each create their own row
+        // before either syncs, and both survive the merge as separate
+        // records. Overwriting on a collision would silently drop
+        // whichever ticks lost the race; appending both lift entries would
+        // hand `liftHistory` two records with the same date and no way to
+        // say which one `.last` actually means. Merging them here — at
+        // read time, without deleting anything — keeps every tick from
+        // every device and gives progression a single, unambiguous entry
+        // per day, without risking a write-time cleanup that guesses wrong
+        // about which duplicate to delete.
         for day in fetch(DayEntry.self) where !day.isEmpty {
-            next.logs[day.date] = day.record
+            if let existing = next.logs[day.date] {
+                next.logs[day.date] = DayRecord(
+                    done: existing.done.union(day.record.done),
+                    fuelHit: existing.fuelHit || day.record.fuelHit,
+                    mobility: existing.mobility.union(day.record.mobility),
+                    note: existing.note.isEmpty ? day.record.note : existing.note)
+            } else {
+                next.logs[day.date] = day.record
+            }
         }
+        var liftsByDate: [String: [String: LiftRecord]] = [:]
         for lift in fetch(LiftEntry.self) where !lift.sets.isEmpty {
-            next.lifts[lift.liftID, default: []].append(LiftRecord(date: lift.date, sets: lift.sets))
+            // The one with more sets is taken as the more complete entry —
+            // there's no timestamp on this model to break the tie any other
+            // way, and a session logged in full is a better bet than one
+            // caught mid-edit by whatever moment the duplicate was created.
+            if let existing = liftsByDate[lift.liftID]?[lift.date], existing.sets.count >= lift.sets.count {
+                continue
+            }
+            liftsByDate[lift.liftID, default: [:]][lift.date] = LiftRecord(date: lift.date, sets: lift.sets)
+        }
+        for (id, byDate) in liftsByDate {
+            next.lifts[id] = Array(byDate.values)
         }
         for entry in fetch(PyramidEntry.self) {
             next.pyramidLog[entry.date] = PyramidRecord(cap: entry.cap, vestKg: entry.vestKg)

@@ -103,6 +103,52 @@ final class AppStoreTests: XCTestCase {
             .filter { $0.date == date }.isEmpty)
     }
 
+    // MARK: - Duplicate rows (no unique constraint under CloudKit)
+
+    /// Two devices ticking different items on the same day before either
+    /// has synced can each create their own `DayEntry` for that date.
+    /// `reload()` has to union them rather than let whichever row it reads
+    /// second overwrite the first — that would silently drop one device's
+    /// ticks depending on nothing more meaningful than fetch order.
+    func testTwoDayEntriesForTheSameDateMergeRatherThanOverwrite() throws {
+        let (store, context) = makeStore()
+        let date = store.state.today
+
+        let fromPhone = DayEntry(date: date)
+        fromPhone.apply(DayRecord(done: ["tu-row"]))
+        let fromIPad = DayEntry(date: date)
+        fromIPad.apply(DayRecord(done: ["tu-ohp"], fuelHit: true))
+        context.insert(fromPhone)
+        context.insert(fromIPad)
+        try context.save()
+
+        store.reload()
+
+        let merged = store.state.day(date)
+        XCTAssertEqual(merged.done, ["tu-row", "tu-ohp"])
+        XCTAssertTrue(merged.fuelHit)
+    }
+
+    /// Same story for a lift logged on both devices before syncing: both
+    /// sets of history must not show up as two records for the same date,
+    /// which would leave `liftHistory`'s "most recent entry" ambiguous.
+    /// The more complete of the two — more sets logged — is kept.
+    func testTwoLiftEntriesForTheSameDayKeepTheMoreCompleteOne() throws {
+        let (store, context) = makeStore()
+        let date = store.state.today
+
+        context.insert(LiftEntry(liftID: "row", date: date, sets: [LiftSet(kg: 60, reps: 8)]))
+        context.insert(LiftEntry(liftID: "row", date: date,
+                                 sets: [LiftSet(kg: 60, reps: 8), LiftSet(kg: 60, reps: 8)]))
+        try context.save()
+
+        store.reload()
+
+        let history = store.state.liftHistory("row")
+        XCTAssertEqual(history.count, 1)
+        XCTAssertEqual(history.first?.sets.count, 2)
+    }
+
     // MARK: - Backup
 
     /// The round-trip Setup's "Export file" / "Import file" actually
