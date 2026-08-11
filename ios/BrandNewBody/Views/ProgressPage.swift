@@ -2,6 +2,15 @@ import SwiftUI
 
 /// Named `ProgressPage` rather than `ProgressView`, which is already a
 /// SwiftUI type — shadowing it would make every spinner in the app ambiguous.
+///
+/// Used to open straight into a panel titled "This week" — a MacroGrid
+/// wearing the exact same header and shadow as everything below it, on a
+/// page whose entire reason to exist is one number: where the scale actually
+/// is. Every other tab opens with a bare, unwrapped headline now; this one
+/// didn't, so the weight itself carried no more visual weight than the
+/// streak count six panels later. The big number and its chart are the
+/// hero now, the same way Today's session count and Week's weekday strip
+/// are — everything else keeps its ordinary Panel treatment.
 struct ProgressPage: View {
     @Environment(AppStore.self) private var store
 
@@ -9,8 +18,8 @@ struct ProgressPage: View {
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 22) {
+            ProgressHero(state: state)
             thisWeek
-            bodyWeight
             BuildPanel(state: state)
             recovery
             consistency
@@ -56,52 +65,6 @@ struct ProgressPage: View {
             return "\(streak) week\(streak == 1 ? "" : "s") running at \(Consistency.greenWeek)+ sessions. \(Consistency.greenWeek - streak) more for a full green month."
         }
         return "A week counts as green at \(Consistency.greenWeek)+ sessions. The streak starts with one."
-    }
-
-    // MARK: Body weight
-
-    private var bodyWeight: some View {
-        let weights = state.sortedWeights
-        let gain = weights.count > 1 ? (weights.last!.kg - weights.first!.kg) : 0
-        return Panel(title: "Body weight", tag: "\(weights.count) weigh-ins") {
-            BigStat(value: state.latestAverage.map { String(format: "%.1f", $0) } ?? "–", unit: "kg")
-            VerdictLine(text: Trend.verdictText(state), tone: Trend.verdict(state))
-            WeightChart(records: weights)
-            Note("""
-                Since you started: \(gain > 0 ? "+" : "")\(String(format: "%.1f", gain)) kg. Target for a lean \
-                bulk is +0.5–0.75 kg per month.
-                """)
-            WaistNote(state: state)
-
-            if !weights.isEmpty {
-                Reveal(title: "Edit weigh-ins") {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Note("""
-                            One mistyped morning sits inside the 28-day window the gain rate is measured \
-                            over, and drags the calorie advice with it.
-                            """)
-                        ForEach(weights.reversed().prefix(14), id: \.date) { record in
-                            StatRow {
-                                Text(record.date)
-                                    .font(Theme.mono(11))
-                                    .foregroundStyle(Theme.muted)
-                            } trailing: {
-                                HStack(spacing: 10) {
-                                    Text("\(String(format: "%.1f", record.kg)) kg")
-                                        .font(Theme.body(13, weight: .bold))
-                                        .foregroundStyle(Theme.bone)
-                                    Button(role: .destructive) { store.deleteWeight(on: record.date) } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Delete weigh-in for \(record.date)")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // MARK: Recovery
@@ -181,6 +144,71 @@ struct ProgressPage: View {
     private func openDay(_ logged: [String]) -> Int {
         let all = groups(logged)
         return all.contains { $0.dow == state.todayDow } ? state.todayDow : (all.first?.dow ?? 1)
+    }
+}
+
+// MARK: - Hero
+
+/// The one number this whole tab exists to show, unwrapped the same way
+/// Today's session count and Week's headline aren't buried inside a panel
+/// either. Weigh-in editing lives here too, next to the number it corrects,
+/// rather than one more panel down.
+private struct ProgressHero: View {
+    var state: LogState
+    @Environment(AppStore.self) private var store
+
+    private var weights: [WeightRecord] { state.sortedWeights }
+    private var gain: Double { weights.count > 1 ? weights.last!.kg - weights.first!.kg : 0 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(state.latestAverage.map { String(format: "%.1f", $0) } ?? "–")
+                    .font(Theme.display(44))
+                    .foregroundStyle(Theme.bone)
+                Text("kg, 7-day average")
+                    .font(Theme.body(15, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
+                Spacer(minLength: 0)
+            }
+
+            VerdictLine(text: Trend.verdictText(state), tone: Trend.verdict(state))
+            WeightChart(records: weights)
+            Note("""
+                Since you started: \(gain > 0 ? "+" : "")\(String(format: "%.1f", gain)) kg. Target for a lean \
+                bulk is +0.5–0.75 kg per month.
+                """)
+            WaistNote(state: state)
+
+            if !weights.isEmpty {
+                Reveal(title: "Edit weigh-ins") {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Note("""
+                            One mistyped morning sits inside the 28-day window the gain rate is measured \
+                            over, and drags the calorie advice with it.
+                            """)
+                        ForEach(weights.reversed().prefix(14), id: \.date) { record in
+                            StatRow {
+                                Text(record.date)
+                                    .font(Theme.mono(11))
+                                    .foregroundStyle(Theme.muted)
+                            } trailing: {
+                                HStack(spacing: 10) {
+                                    Text("\(String(format: "%.1f", record.kg)) kg")
+                                        .font(Theme.body(13, weight: .bold))
+                                        .foregroundStyle(Theme.bone)
+                                    Button(role: .destructive) { store.deleteWeight(on: record.date) } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Delete weigh-in for \(record.date)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
