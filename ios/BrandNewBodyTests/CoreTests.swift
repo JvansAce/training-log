@@ -726,4 +726,31 @@ final class CoreTests: XCTestCase {
         let restored = try JSONDecoder().decode(LogState.self, from: data)
         XCTAssertEqual(restored, state)
     }
+
+    /// A backup written before some field existed — or hand-edited down to
+    /// just the essentials — has to keep importing. `LogState`'s `Decodable`
+    /// is hand-written for exactly this: every field falls back to its own
+    /// ordinary default when the key is missing, instead of the whole
+    /// restore failing over one field an old export never had a chance to
+    /// write.
+    func testLogStateDecodesMissingFieldsAsDefaults() throws {
+        let json = #"{"today":"2026-01-01"}"#
+        let state = try JSONDecoder().decode(LogState.self, from: Data(json.utf8))
+        XCTAssertEqual(state.today, "2026-01-01")
+        XCTAssertEqual(state.startDate, "2026-01-01")
+        XCTAssertEqual(state.pyramidCap, 4)
+        XCTAssertEqual(state.barKg, 20)
+        XCTAssertEqual(state.mindUnlocked, 1)
+        XCTAssertEqual(state.mindLadderCap, 1)
+        XCTAssertTrue(state.weights.isEmpty)
+        XCTAssertTrue(state.logs.isEmpty)
+        XCTAssertTrue(state.lifts.isEmpty)
+        XCTAssertEqual(state.schemaVersion, 1)
+    }
+
+    /// Even nothing at all — every key absent — has to decode rather than
+    /// throw, the same way a corrupted-down-to-nothing file would.
+    func testLogStateDecodesAnEmptyObjectWithoutThrowing() throws {
+        XCTAssertNoThrow(try JSONDecoder().decode(LogState.self, from: Data("{}".utf8)))
+    }
 }

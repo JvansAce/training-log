@@ -165,6 +165,11 @@ public struct MindDayRecord: Codable, Hashable, Sendable {
 /// calculation. A test can ask what this log looks like on any day.
 public struct LogState: Codable, Hashable, Sendable {
 
+    /// Bumped only for a change decoding-as-default can't absorb — a rename
+    /// or a type change, never a plain addition. Every backup written
+    /// before this field existed decodes as 1.
+    public var schemaVersion: Int = 1
+
     // MARK: Settings
 
     public var startDate: String
@@ -210,6 +215,59 @@ public struct LogState: Codable, Hashable, Sendable {
     public init(today: String = DateKit.todayKey) {
         self.today = today
         self.startDate = today
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, startDate, pyramidCap, vestKg, vestPhase, barKg, calAdjust,
+             heightCm, birthYear, deloadSnooze,
+             weights, waist, logs, lifts, pyramidLog, deloadLog, off, recovery,
+             mindStartDate, mindUnlocked, mindLogs, mindTargets, mindLadderLog, mindLadderCap,
+             charismaIx, charismaSince,
+             today
+    }
+
+    /// Hand-written, unlike every other `Codable` type in this file, because
+    /// this one is the whole exported backup — and the synthesized
+    /// conformance it replaces treated every non-Optional property as a
+    /// required JSON key. Adding a single field in some future version would
+    /// have broken every backup already sitting on someone's disk, for a
+    /// file that's otherwise perfectly valid: `import` is exactly the
+    /// operation that must tolerate a degree of forward drift it never
+    /// controlled. Each field now falls back to its own ordinary default —
+    /// the same one its declaration already carries — when the key is
+    /// missing, rather than throwing.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+
+        today = try c.decodeIfPresent(String.self, forKey: .today) ?? DateKit.todayKey
+        startDate = try c.decodeIfPresent(String.self, forKey: .startDate) ?? today
+        pyramidCap = try c.decodeIfPresent(Int.self, forKey: .pyramidCap) ?? 4
+        vestKg = try c.decodeIfPresent(Double.self, forKey: .vestKg)
+        vestPhase = try c.decodeIfPresent(Int.self, forKey: .vestPhase) ?? 0
+        barKg = try c.decodeIfPresent(Double.self, forKey: .barKg) ?? 20
+        calAdjust = try c.decodeIfPresent(Int.self, forKey: .calAdjust) ?? 0
+        heightCm = try c.decodeIfPresent(Int.self, forKey: .heightCm)
+        birthYear = try c.decodeIfPresent(Int.self, forKey: .birthYear)
+        deloadSnooze = try c.decodeIfPresent(String.self, forKey: .deloadSnooze)
+
+        weights = try c.decodeIfPresent([WeightRecord].self, forKey: .weights) ?? []
+        waist = try c.decodeIfPresent([WaistRecord].self, forKey: .waist) ?? []
+        logs = try c.decodeIfPresent([String: DayRecord].self, forKey: .logs) ?? [:]
+        lifts = try c.decodeIfPresent([String: [LiftRecord]].self, forKey: .lifts) ?? [:]
+        pyramidLog = try c.decodeIfPresent([String: PyramidRecord].self, forKey: .pyramidLog) ?? [:]
+        deloadLog = try c.decodeIfPresent(Set<String>.self, forKey: .deloadLog) ?? []
+        off = try c.decodeIfPresent([String: OffKind].self, forKey: .off) ?? [:]
+        recovery = try c.decodeIfPresent([String: RecoveryRecord].self, forKey: .recovery) ?? [:]
+
+        mindStartDate = try c.decodeIfPresent(String.self, forKey: .mindStartDate)
+        mindUnlocked = try c.decodeIfPresent(Int.self, forKey: .mindUnlocked) ?? 1
+        mindLogs = try c.decodeIfPresent([String: MindDayRecord].self, forKey: .mindLogs) ?? [:]
+        mindTargets = try c.decodeIfPresent([String: Int].self, forKey: .mindTargets) ?? [:]
+        mindLadderLog = try c.decodeIfPresent(Set<String>.self, forKey: .mindLadderLog) ?? []
+        mindLadderCap = try c.decodeIfPresent(Int.self, forKey: .mindLadderCap) ?? 1
+        charismaIx = try c.decodeIfPresent(Int.self, forKey: .charismaIx) ?? 0
+        charismaSince = try c.decodeIfPresent(String.self, forKey: .charismaSince)
     }
 
     public var todayDow: Int { DateKit.dow(key: today) ?? 0 }
