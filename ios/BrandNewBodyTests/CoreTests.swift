@@ -286,6 +286,81 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(Lifts.stall(history))
     }
 
+    // MARK: - Assisted lifts
+
+    /// A pull-up or a dip starts at your own bodyweight, so the only way to
+    /// make one easier is to take weight off — a band, or an assist machine.
+    /// Logged as a negative, that used to walk through every one of these
+    /// functions as if it were weight added.
+    func testOnlyTheBodyweightLiftsAcceptAssistance() {
+        let items = Plan.order.flatMap { Plan.day($0).items }
+        let assisted = Set(items.filter(\.isBodyweight).compactMap(\.liftID))
+        XCTAssertEqual(assisted, ["pullup", "wpullup", "dips"])
+        // A barbell row cannot be loaded below an empty bar, and "BW −15 kg"
+        // would be a lie about what was done.
+        XCTAssertFalse(items.contains { $0.isBarbell && $0.isBodyweight })
+    }
+
+    func testAssistancePrintsAsBodyweightMinusTheHelp() {
+        XCTAssertEqual(Lifts.describe(LiftSet(kg: -15, reps: 8)), "BW −15 kg × 8")
+        XCTAssertEqual(Lifts.describe(LiftSet(kg: -12.5, reps: 6)), "BW −12.5 kg × 6")
+        XCTAssertEqual(Lifts.describe(LiftSet(kg: 12.5, reps: 8)), "12.5 kg × 8")
+        // Zero is bodyweight, not a load of nothing.
+        XCTAssertEqual(Lifts.describe(LiftSet(kg: 0, reps: 8)), "BW × 8")
+        XCTAssertEqual(Lifts.describeLoad(-15), "15 kg assist")
+        XCTAssertEqual(Lifts.describeLoad(0), "bodyweight")
+        XCTAssertEqual(Lifts.describeLoad(nil), "bodyweight")
+    }
+
+    func testLessHelpIsTheBetterSet() {
+        XCTAssertTrue(Lifts.beats(LiftSet(kg: -10, reps: 8), LiftSet(kg: -15, reps: 8)))
+        XCTAssertFalse(Lifts.beats(LiftSet(kg: -15, reps: 8), LiftSet(kg: -10, reps: 8)))
+        XCTAssertTrue(Lifts.beats(LiftSet(reps: 8), LiftSet(kg: -5, reps: 8)),
+                      "plain bodyweight beats any amount of help")
+    }
+
+    /// -15 × 8 through Epley reads -19 kg, which then becomes the peak of the
+    /// series, the baseline a stall is measured against, and a printed number.
+    func testAssistedWorkHasNoE1rmAndNoKgVolume() {
+        XCTAssertNil(Lifts.e1rm(LiftSet(kg: -15, reps: 8)))
+        XCTAssertNil(Lifts.e1rm(LiftSet(kg: 0, reps: 8)))
+        let record = LiftRecord(date: today, sets: [LiftSet(kg: -15, reps: 8), LiftSet(kg: -15, reps: 7)])
+        XCTAssertEqual(Lifts.volume(record), Lifts.Volume(reps: 15, kg: nil),
+                       "negative kg-volume would read as work done in reverse")
+    }
+
+    func testTheStepIsSizedByHowMuchLoadThereIsNotWhichSideOfZero() {
+        XCTAssertEqual(Lifts.loadStep(-10), 1)
+        XCTAssertEqual(Lifts.loadStep(-20), 2.5)
+    }
+
+    func testProgressionTakesHelpAwayAndTheLastKiloLandsOnBodyweight() {
+        var state = makeState()
+        state.lifts["dips"] = [LiftRecord(date: DateKit.adding(-3, to: today), sets: [
+            LiftSet(kg: -15, reps: 12), LiftSet(kg: -15, reps: 12),
+        ])]
+        let target = Lifts.nextTarget(state, id: "dips", on: today, prescription: "3 × 8–12")
+        XCTAssertEqual(target?.kg, -12.5, "adding load means less assistance, not more")
+        XCTAssertTrue(target!.text.contains("12.5 kg assist"))
+
+        state.lifts["dips"] = [LiftRecord(date: DateKit.adding(-3, to: today),
+                                          sets: [LiftSet(kg: -1, reps: 12)])]
+        let last = Lifts.nextTarget(state, id: "dips", on: today, prescription: "3 × 8–12")
+        XCTAssertEqual(last?.kg, 0)
+        XCTAssertTrue(last!.text.contains("bodyweight"), "a target of \"go 0 kg\" is not a sentence")
+    }
+
+    /// Backing off means less load, which on an assisted lift means more help
+    /// from the band. The old floor sent an assisted lifter to +1 kg.
+    func testLongLayoffOnAnAssistedLiftGivesMoreHelpNotMoreWeight() {
+        var state = makeState()
+        state.lifts["dips"] = [LiftRecord(date: DateKit.adding(-40, to: today),
+                                          sets: [LiftSet(kg: -15, reps: 10)])]
+        let target = Lifts.nextTarget(state, id: "dips", on: today, prescription: "3 × 8–12")
+        XCTAssertEqual(target?.kg, -17.5)
+        XCTAssertTrue(target!.text.contains("17.5 kg assist"))
+    }
+
     // MARK: - Pyramid
 
     /// Total work grows with the square of the cap: 6 to 10 is not four more
