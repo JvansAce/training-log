@@ -68,11 +68,19 @@ private struct PracticeRow: View {
 
     @State private var minutes = ""
     @State private var journal = ""
+    /// Suppresses each field's own `onChange` while `load()` is assigning
+    /// into it — without this, the reassignment itself would look like a
+    /// user edit and get scheduled for a write straight back.
     @State private var loaded = false
-    // Mind has no back-fill — every write here targets `state.today` — so
-    // unlike the Body side's LiftRow and note field, these two debouncers
-    // don't need to track which day a pending edit belongs to, only whether
-    // there is one.
+    /// The date whatever's currently in `minutes`/`journal` belongs to. Mind
+    /// has no back-fill, so every write targets `state.today` — but an
+    /// installed app is resumed, not relaunched, and this view's identity
+    /// (keyed by the practice, not the day) survives sitting in the switcher
+    /// across midnight. Without tracking which day was actually loaded,
+    /// reopening after midnight kept showing yesterday's half-typed minutes
+    /// or journal entry, and the next keystroke committed that stale text
+    /// onto today's record instead of yesterday's.
+    @State private var loadedFor = ""
     @State private var minutesDebouncer = Debouncer()
     @State private var journalDebouncer = Debouncer()
     // Set only inside each field's own onChange, so flushing on disappear or
@@ -98,34 +106,42 @@ private struct PracticeRow: View {
                     .onChange(of: journal) { _, _ in
                         guard loaded else { return }
                         journalDirty = true
-                        journalDebouncer.schedule { commitJournal() }
+                        let date = state.today
+                        journalDebouncer.schedule { commitJournal(for: date) }
                     }
             default:
                 EmptyView()
             }
         }
         .onAppear(perform: load)
+        .onChange(of: state.today) { old, _ in
+            minutesDebouncer.flush { commitMinutes(for: old) }
+            journalDebouncer.flush { commitJournal(for: old) }
+            load()
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase != .active else { return }
-            minutesDebouncer.flush { commitMinutes() }
-            journalDebouncer.flush { commitJournal() }
+            let date = state.today
+            minutesDebouncer.flush { commitMinutes(for: date) }
+            journalDebouncer.flush { commitJournal(for: date) }
         }
         .onDisappear {
-            minutesDebouncer.flush { commitMinutes() }
-            journalDebouncer.flush { commitJournal() }
+            let date = state.today
+            minutesDebouncer.flush { commitMinutes(for: date) }
+            journalDebouncer.flush { commitJournal(for: date) }
         }
     }
 
-    private func commitMinutes() {
+    private func commitMinutes(for date: String) {
         guard minutesDirty else { return }
         minutesDirty = false
-        store.setMindMinutes(Int(minutes), practice: practice.key, on: state.today)
+        store.setMindMinutes(Int(minutes), practice: practice.key, on: date)
     }
 
-    private func commitJournal() {
+    private func commitJournal(for date: String) {
         guard journalDirty else { return }
         journalDirty = false
-        store.setJournal(journal, on: state.today)
+        store.setJournal(journal, on: date)
     }
 
     @ViewBuilder
@@ -145,7 +161,8 @@ private struct PracticeRow: View {
                     .onChange(of: minutes) { _, _ in
                         guard loaded else { return }
                         minutesDirty = true
-                        minutesDebouncer.schedule { commitMinutes() }
+                        let date = state.today
+                        minutesDebouncer.schedule { commitMinutes(for: date) }
                     }
                 Text("of \(target)")
                     .font(Theme.mono(11))
@@ -187,9 +204,12 @@ private struct PracticeRow: View {
     }
 
     private func load() {
-        guard !loaded else { return }
+        let date = state.today
+        guard loadedFor != date else { return }
+        loaded = false
         minutes = log.mins[practice.key].map(String.init) ?? ""
         journal = log.journal
+        loadedFor = date
         loaded = true
     }
 }
