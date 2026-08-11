@@ -99,8 +99,13 @@ public enum Plan {
                     // made the two indistinguishable everywhere `Plan.liftNames`
                     // is what gets shown, notably the weekly "beaten this week"
                     // list, which carries no day context to tell them apart.
+                    // 4 sets down to 3: back and lat were the one muscle group
+                    // the review found genuinely over-dosed at 16–17 sets a
+                    // week, and the pyramid quietly adds ten more pull-ups on
+                    // top of that — the same reasoning that took the row from
+                    // 4 to 3, applied consistently.
                     Exercise(key: "tu-wpullup", name: "Pull-ups · heavy",
-                             prescription: "4 × 5–8 — add weight at 8",
+                             prescription: "3 × 5–8 — add weight at 8",
                              rir: "1–3", liftID: "wpullup", isBodyweight: true),
                     // Heavy enough to actually be the strength day: strength
                     // cares far less about proximity to failure than
@@ -125,7 +130,13 @@ public enum Plan {
                              rir: "1–2", liftID: "row", isBarbell: true),
                     Exercise(key: "tu-ohp", name: "Overhead press", prescription: "3 × 8–10",
                              rir: "1–2", liftID: "ohp", isBarbell: true),
-                    Exercise(key: "tu-dips", name: "Dips", prescription: "3 × 8–12", rir: "1–2", liftID: "dips",
+                    // 3 down to 2, for the reason the review raises in 3.9 and
+                    // then never spends: the pyramid already puts 20 dips and
+                    // 30 push-ups into the week at cap 4, and more every time
+                    // a round goes on. Chest and triceps are the two groups
+                    // that volume actually lands on, so this is where it gets
+                    // accounted for rather than counted twice.
+                    Exercise(key: "tu-dips", name: "Dips", prescription: "2 × 8–12", rir: "1–2", liftID: "dips",
                              isBodyweight: true),
                     // Rear delts had almost no direct volume anywhere in the
                     // week — the stated goal is side and rear shoulder, so
