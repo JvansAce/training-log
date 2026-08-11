@@ -26,6 +26,8 @@ struct MindTodayView: View {
             }
         } else {
             LazyVStack(alignment: .leading, spacing: 22) {
+                MindHero(state: state)
+
                 Panel(title: "Today",
                       tag: "\(Plan.dayNames[state.todayDow] ?? "") · week \(Mind.weeksIn(state) + 1)") {
                     Note(intro)
@@ -57,6 +59,45 @@ struct MindTodayView: View {
             return "One practice. Do it every day until it is boring, then the next one arrives."
         }
         return "\(active.count) practices. Tick what you did — a missed day is a missed day, not a reason to stop."
+    }
+}
+
+// MARK: - Hero
+
+/// The same headline Today's Body page opens with — how much of today is
+/// actually done — so the two programmes read as one app switched by a
+/// segmented control, not two different products sharing a tab bar.
+private struct MindHero: View {
+    var state: LogState
+
+    private var active: [MindPlan.Practice] { Mind.activePractices(state) }
+    private var doneCount: Int { active.filter { Mind.didPractice(state, $0, on: state.today) }.count }
+    private var totalCount: Int { active.count }
+    private var fraction: Double { totalCount > 0 ? Double(doneCount) / Double(totalCount) : 0 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(doneCount)")
+                    .font(Theme.display(44))
+                    .foregroundStyle(Theme.bone)
+                Text("of \(totalCount) done today")
+                    .font(Theme.body(15, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
+                Spacer(minLength: 0)
+            }
+
+            Capsule()
+                .fill(Theme.raise)
+                .frame(height: 6)
+                .overlay(alignment: .leading) {
+                    GeometryReader { geo in
+                        Capsule()
+                            .fill(Theme.red)
+                            .frame(width: geo.size.width * fraction)
+                    }
+                }
+        }
     }
 }
 
@@ -420,6 +461,10 @@ struct MindWeekView: View {
         let active = Mind.activePractices(state)
 
         LazyVStack(alignment: .leading, spacing: 22) {
+            Text("Week \(Mind.weeksIn(state) + 1)")
+                .font(Theme.display(30))
+                .foregroundStyle(Theme.bone)
+
             Panel(title: "The week", tag: "last 7 days") {
                 ForEach(Plan.order, id: \.self) { dow in
                     let date = DateKit.adding(-((state.todayDow - dow + 7) % 7), to: state.today)
@@ -493,15 +538,25 @@ struct MindProgressView: View {
         let journalDays = Mind.journalDays(state)
 
         LazyVStack(alignment: .leading, spacing: 22) {
-            Panel(title: "Consistency", tag: "last 28 days") {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(adherence.map { "\(Int(($0.rate * 100).rounded()))" } ?? "–")
+                        .font(Theme.display(44))
+                        .foregroundStyle(Theme.bone)
+                    Text("% done, last 28 days")
+                        .font(Theme.body(15, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                    Spacer(minLength: 0)
+                }
+                Note(Mind.reading(state))
+            }
+
+            Panel(title: "This month", tag: "last 28 days") {
                 MacroGrid(items: [
-                    .init(value: adherence.map { "\(Int(($0.rate * 100).rounded()))" } ?? "–",
-                          label: "done", suffix: "%"),
                     .init(value: "\(active.count)", label: "practices"),
                     .init(value: "\(journalDays)", label: "entries"),
                     .init(value: "\(state.mindLadderCap)", label: "ladder cap"),
                 ])
-                Note(Mind.reading(state))
             }
 
             Panel(title: "Streaks", tag: "days running") {
