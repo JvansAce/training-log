@@ -59,6 +59,32 @@ public enum Pyramid {
     /// volume yet.
     public static let vestFromCap = 6
 
+    /// The three movements the pyramid shares with the upper days — the reason
+    /// its climb is not free. Sit-ups and squats overlap too, but against work
+    /// the plan already treats as secondary; these are the ones whose weekly
+    /// rep count can quietly outgrow the sets prescribed for them.
+    public static let overlappingMovements = ["pull-ups", "dips", "push-ups"]
+
+    /// The cap at which the pyramid's own pull and push volume stops being a
+    /// rounding error against Tuesday and Friday. At cap 6 it is 21 pull-ups
+    /// and 42 dips a week; by cap 8, 36 and 72 — more dips than the upper days
+    /// prescribe for them.
+    ///
+    /// Deliberately surfaced as a note rather than folded into an automatic
+    /// adjustment. Converting reps of fatigued circuit work into an equivalent
+    /// number of working sets needs a coefficient nobody can defend — the
+    /// fractional-set methodology this plan follows counts *working* sets, and
+    /// calling 108 push-ups some number of chest sets would be an invented
+    /// figure wearing the clothes of a computed one. So this reports the real
+    /// counts, which are exact, and leaves the trade to the person doing them.
+    public static let overlapFromCap = 7
+
+    /// What the pyramid alone puts into the week for each movement it shares
+    /// with the upper days, at a given cap.
+    public static func overlap(cap: Int) -> [Part] {
+        totals(cap: cap).parts.filter { overlappingMovements.contains($0.name) }
+    }
+
     /// Which programme week a date falls in. Taken from the date rather than
     /// from `today`, so back-filling last Saturday asks about *last* Saturday's
     /// week rather than this one's.

@@ -881,6 +881,19 @@ private struct PyramidPanel: View {
                     .joined(separator: " · "))
             }
 
+            // Past a certain cap the pyramid is quietly supplying more pull and
+            // push volume than the upper days prescribe, and every round added
+            // raises it again. Reported as exact rep counts with the trade
+            // named, rather than silently adjusting Tuesday and Friday: the
+            // conversion from circuit reps to equivalent working sets is a
+            // number nobody can defend, and a set removed without a visible
+            // reason is worse than one you chose to remove.
+            if cap >= Pyramid.overlapFromCap {
+                Note("At cap \(cap) the pyramid alone adds " +
+                     Pyramid.overlap(cap: cap).map { "\($0.reps) \($0.name)" }.joined(separator: " · ") +
+                     " to the week, on top of everything Tuesday and Friday already prescribe. If pressing or pulling goes stale before the next round feels easy, take a set off dips or the row before you take a round off here — the pyramid is the part that is meant to keep climbing.")
+            }
+
             // The +/– buttons above still move the persisted, climbing cap —
             // that's what they're for, and it has to keep working even
             // mid-deload so a back-fill later this week isn't stuck editing

@@ -494,6 +494,18 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Pyramid.suggestedVestKg(state), 5.0)
     }
 
+    /// The pull and push the pyramid quietly adds on top of the upper days —
+    /// reported exactly, because the rep counts are exact even though their
+    /// conversion into equivalent working sets would not be.
+    func testPyramidOverlapReportsThePullAndPushItAddsToTheWeek() {
+        let overlap = Pyramid.overlap(cap: 8)
+        XCTAssertEqual(overlap.map(\.name), ["pull-ups", "dips", "push-ups"],
+                       "in ratio order, and only the movements the upper days also train")
+        // Triangular number for cap 8 is 36, times the 1 · 2 · 3 ratio.
+        XCTAssertEqual(overlap.map(\.reps), [36, 72, 108])
+        XCTAssertEqual(Pyramid.overlap(cap: 4).map(\.reps), [10, 20, 30])
+    }
+
     /// During today's own deload week, the pyramid logs a round lighter with
     /// no vest — without ever touching the persisted, climbing cap itself.
     func testPyramidDropsARoundAndTheVestDuringTodaysDeloadWeek() {
