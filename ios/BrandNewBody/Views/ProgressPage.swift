@@ -247,10 +247,23 @@ private struct WaistNote: View {
 
     /// Built here rather than in `body` because assembling a sentence needs
     /// statements, and a `ViewBuilder` body is not a place for them.
+    ///
+    /// A rolling window, the same `Trend.windowDays` the weight rate uses —
+    /// not first-ever against most-recent. That comparison is a chord across
+    /// the whole log: a year in, "+0.4 cm over 700 days" still trips "the
+    /// bulk is working" and never says anything else again, the same failure
+    /// mode `Trend.fit` was written to avoid for the weight rate itself.
     private var text: String {
         let waist = state.sortedWaist
-        guard let first = waist.first, let last = waist.last, waist.count >= 2 else {
+        guard let last = waist.last else {
             return "Log your waist twice and the comparison against bodyweight shows up here."
+        }
+        let cutoff = DateKit.adding(-Trend.windowDays, to: last.date)
+        let window = waist.filter { $0.date >= cutoff }
+        guard window.count >= 2, let first = window.first else {
+            return waist.count >= 2
+                ? "Your last two waist measurements are more than \(Trend.windowDays) days apart — log again this week to see the trend."
+                : "Log your waist twice and the comparison against bodyweight shows up here."
         }
         let deltaCm = last.cm - first.cm
         let span = DateKit.days(from: first.date, to: last.date) ?? 0
