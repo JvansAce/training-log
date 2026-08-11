@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Observation
+import UserNotifications
 
 /// Wall-clock, not a decrementing counter.
 ///
@@ -14,6 +15,14 @@ import Observation
 final class RestTimer {
     private(set) var total: Int = 0
     private(set) var endsAt: Date?
+    private var autoStopTask: Task<Void, Never>?
+
+    private static let notificationID = "rest-timer-done"
+    /// How long the bar keeps showing "rest done" before clearing itself —
+    /// long enough to notice without having to tap Stop, short enough that
+    /// it doesn't just sit there redrawing forever once rest is actually
+    /// over.
+    static let doneGrace: TimeInterval = 6
 
     var isRunning: Bool { total > 0 }
 
@@ -29,22 +38,79 @@ final class RestTimer {
 
     func start(seconds: Int) {
         total = seconds
-        endsAt = Date().addingTimeInterval(TimeInterval(seconds))
+        let end = Date().addingTimeInterval(TimeInterval(seconds))
+        endsAt = end
+        scheduleNotification(at: end)
+        scheduleAutoStop(at: end)
     }
 
     func add(seconds: Int) {
         guard let current = endsAt else { return }
         total += seconds
-        endsAt = current.addingTimeInterval(TimeInterval(seconds))
+        let end = current.addingTimeInterval(TimeInterval(seconds))
+        endsAt = end
+        scheduleNotification(at: end)
+        scheduleAutoStop(at: end)
     }
 
     func stop() {
         total = 0
         endsAt = nil
+        autoStopTask?.cancel()
+        autoStopTask = nil
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: [Self.notificationID])
     }
 
     static func format(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    // MARK: - Local notification
+
+    /// The bar's own haptic only fires while the app is foregrounded with
+    /// the bar on screen — which a locked phone mid-rest, the entire reason
+    /// this timer exists, is neither. A local notification is the only way
+    /// "rest is over" actually reaches you if the phone's been put down.
+    /// Authorization is requested here, at the point a timer is first
+    /// started, rather than on launch — if it's denied, this silently does
+    /// nothing further and the in-app haptic still covers the foreground
+    /// case, same as before this existed.
+    private func scheduleNotification(at date: Date) {
+        let center = UNUserNotificationCenter.current()
+        // Captured as plain locals rather than read from `Self` inside the
+        // completion below — that closure doesn't run on the main actor,
+        // and a local copy sidesteps any question of isolation on a static
+        // member of a `@MainActor` type.
+        let identifier = Self.notificationID
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        let seconds = max(1, date.timeIntervalSinceNow)
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Rest done"
+            content.body = "Back to it."
+            content.sound = .default
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+            center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
+        }
+    }
+
+    /// Clears the timer itself a grace period after it reaches zero, so the
+    /// bar's `TimelineView` isn't redrawing twice a second indefinitely and
+    /// the "rest done" bar doesn't just sit there until someone remembers to
+    /// dismiss it. Re-scheduled on every `start`/`add` against the current
+    /// `endsAt`, so extending a rest with "+30s" — including during the
+    /// grace window, after it already hit zero once — pushes this back
+    /// rather than stopping a rest that's actually still running.
+    private func scheduleAutoStop(at end: Date) {
+        autoStopTask?.cancel()
+        let delayMs = Int((max(0, end.timeIntervalSinceNow) + Self.doneGrace) * 1000)
+        autoStopTask = Task {
+            try? await Task.sleep(for: .milliseconds(delayMs))
+            guard !Task.isCancelled else { return }
+            stop()
+        }
     }
 }
 
