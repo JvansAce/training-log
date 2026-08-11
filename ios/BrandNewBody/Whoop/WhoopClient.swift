@@ -32,6 +32,8 @@ final class WhoopClient {
     private var session: ASWebAuthenticationSession?
     private var pendingVerifier: String?
     private var pendingState: String?
+    /// The in-flight refresh, if any — see `sharedRefresh()`.
+    private var refreshTask: Task<String?, Never>?
 
     private enum Account {
         static let accessToken = "accessToken"
@@ -175,7 +177,31 @@ final class WhoopClient {
         if Date().timeIntervalSince1970 < expiresAt, let token = keychain.get(account: Account.accessToken) {
             return token
         }
-        return await refreshAccessToken()
+        return await sharedRefresh()
+    }
+
+    /// Coalesces concurrent refreshes into one in-flight request.
+    ///
+    /// `fetchToday` is deliberately called from more than one place on
+    /// launch — the app's own scene-phase handler and `RootView.task`, belt
+    /// and suspenders for a foreground transition that's missed — and both
+    /// can land inside the same expiry window. Being `@MainActor` serialises
+    /// access to this property, but not the `await` inside
+    /// `refreshAccessToken()` itself, so both callers can pass the "is the
+    /// token still valid" check before either has written a new one back to
+    /// the keychain. WHOOP rotates the refresh token on every use, so the
+    /// second of two concurrent refreshes presents a token the first one
+    /// already consumed, fails, and disconnects the user — even though the
+    /// first refresh succeeded and the app is, in fact, still connected.
+    /// Sharing one `Task` means every caller in the same window awaits the
+    /// same request instead of racing to spend the same token twice.
+    private func sharedRefresh() async -> String? {
+        if let refreshTask { return await refreshTask.value }
+        let task = Task { await refreshAccessToken() }
+        refreshTask = task
+        let result = await task.value
+        refreshTask = nil
+        return result
     }
 
     // MARK: - Data
