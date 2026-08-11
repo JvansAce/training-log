@@ -74,11 +74,31 @@ public enum Pyramid {
         return state.pyramidCap >= vestFromCap && ((week + state.vestPhase) % 2) == 1
     }
 
+    /// True only for today's own pyramid, during today's own deload week —
+    /// never for a back-filled past Saturday, which happened under whatever
+    /// was actually prescribed that week and shouldn't be rewritten by
+    /// hindsight. `on` mirrors the rest of this file's date-optional
+    /// convention: nil means "today".
+    public static func isDeloadedToday(_ state: LogState, on date: String? = nil) -> Bool {
+        (date ?? state.today) == state.today && Deload.inDeloadWeek(state)
+    }
+
+    /// The cap actually prescribed for `date` — one lower than the climbing
+    /// cap during today's own deload week, without ever touching the
+    /// persisted value itself. The climb resumes exactly where it left off
+    /// once the week off ends; alternating rounds and vest is paused, not
+    /// interrupted.
+    public static func effectiveCap(_ state: LogState, on date: String? = nil) -> Int {
+        guard isDeloadedToday(state, on: date) else { return state.pyramidCap }
+        return max(1, state.pyramidCap - 1)
+    }
+
     /// The pyramid line as it appears on Saturday's checklist, with the cap
-    /// and — on a vest week — the load folded into the name.
+    /// and — on a vest week — the load folded into the name. A deload week
+    /// drops both: one fewer round, and no vest regardless of parity.
     public static func itemName(_ state: LogState, on date: String? = nil) -> String {
-        var name = "Holland pyramid — rounds 1–\(state.pyramidCap)"
-        if isVestWeek(state, on: date), let v = vestKg(state) {
+        var name = "Holland pyramid — rounds 1–\(effectiveCap(state, on: date))"
+        if !isDeloadedToday(state, on: date), isVestWeek(state, on: date), let v = vestKg(state) {
             name += " · vest \(String(format: "%.1f", v)) kg"
         }
         return name

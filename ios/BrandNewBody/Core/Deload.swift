@@ -20,12 +20,31 @@ public enum Deload {
     public static let minimumDays = 5         // don't judge a week off two readings
     public static let cooldownDays = 28       // never suggest another inside a month
     public static let snoozeDays = 5          // days of quiet after "Not now"
+    /// The calendar backstop: a deload is due by here regardless of what
+    /// recovery data says, or whether there's any recovery data at all.
+    /// Every week of the programme adds load or volume with nothing that
+    /// ever explicitly backs off, and someone without WHOOP or manual
+    /// recovery entries would otherwise never see a deload signal — the
+    /// recovery-based checks below need readings to fire, and this one
+    /// doesn't. Sits at the top of the plan's own 4–6 week block window.
+    public static let blockWeeks = 6
+    /// How many of a session's lifts, trained in each of the last three
+    /// sessions, need to show two straight sessions of a worse best set at
+    /// the same prescription before that alone reads as fatigue outrunning
+    /// recovery — the early trigger, ahead of the calendar or a bad
+    /// recovery average.
+    public static let performanceDeclineShare = 0.5
+
+    public enum SignalKind: Equatable, Sendable {
+        case recovery, performance, calendar
+    }
 
     public struct Signal: Equatable, Sendable {
         public var mean: Int
         public var reds: Int
         public var days: Int
         public var reason: String
+        public var kind: SignalKind
     }
 
     /// Scored recovery for the days before today, newest first.
@@ -68,6 +87,31 @@ public enum Deload {
         max(0, 7 - daysSince(state, lastDeload(state)))
     }
 
+    /// Whole weeks since the last deload — or, if there has never been one,
+    /// since the programme started. The block's own calendar clock,
+    /// independent of any recovery reading.
+    public static func weeksSinceLastDeload(_ state: LogState) -> Int {
+        let since = lastDeload(state) ?? state.startDate
+        return max(0, (DateKit.days(from: since, to: state.today) ?? 0) / 7)
+    }
+
+    /// True if at least half of the lifts with three or more logged sessions
+    /// show a worse best set in each of their last two sessions than the one
+    /// before that — the same prescription producing less each time, which
+    /// is fatigue outrunning recovery rather than a plateau (`Lifts.stall`
+    /// is the flat-line version of this same idea).
+    static func performanceDeclining(_ state: LogState) -> Bool {
+        let scored = Plan.liftIDs.compactMap { id -> Bool? in
+            let history = state.liftHistory(id).filter { !$0.sets.isEmpty }
+            guard history.count >= 3 else { return nil }
+            let scores = history.suffix(3).compactMap { Lifts.bestE1rm($0) }
+            guard scores.count == 3 else { return nil }
+            return scores[2] < scores[1] && scores[1] < scores[0]
+        }
+        guard scored.count >= 3 else { return false }
+        return Double(scored.filter { $0 }.count) / Double(scored.count) >= performanceDeclineShare
+    }
+
     public static func signal(_ state: LogState) -> Signal? {
         if inDeloadWeek(state) { return nil }
         // Nothing to deload from while you are off, and the first days back
@@ -81,18 +125,35 @@ public enum Deload {
         if daysSince(state, state.deloadSnooze) < snoozeDays { return nil }
 
         let days = recoveryDays(state, window)
-        guard days.count >= minimumDays else { return nil }
-        let mean = Int((Double(days.reduce(0) { $0 + $1.value }) / Double(days.count)).rounded())
-        let reds = days.filter { $0.value < redRecovery }.count
+        if days.count >= minimumDays {
+            let mean = Int((Double(days.reduce(0) { $0 + $1.value }) / Double(days.count)).rounded())
+            let reds = days.filter { $0.value < redRecovery }.count
 
-        if mean < meanThreshold {
-            return Signal(mean: mean, reds: reds, days: days.count,
-                          reason: "Recovery has averaged \(mean)% over the last \(days.count) days.")
+            if mean < meanThreshold {
+                return Signal(mean: mean, reds: reds, days: days.count,
+                              reason: "Recovery has averaged \(mean)% over the last \(days.count) days.",
+                              kind: .recovery)
+            }
+            if reds >= redDaysThreshold {
+                return Signal(mean: mean, reds: reds, days: days.count,
+                              reason: "\(reds) red days in the last \(days.count), at a \(mean)% average.",
+                              kind: .recovery)
+            }
         }
-        if reds >= redDaysThreshold {
-            return Signal(mean: mean, reds: reds, days: days.count,
-                          reason: "\(reds) red days in the last \(days.count), at a \(mean)% average.")
+
+        if performanceDeclining(state) {
+            return Signal(mean: 0, reds: 0, days: 0,
+                          reason: "Two sessions running of falling numbers at the same prescription, across half or more of what you're currently training.",
+                          kind: .performance)
         }
+
+        let weeks = weeksSinceLastDeload(state)
+        if weeks >= blockWeeks {
+            return Signal(mean: 0, reds: 0, days: weeks,
+                          reason: "\(weeks) weeks since your last deload — due on the calendar alone, recovery data or not.",
+                          kind: .calendar)
+        }
+
         return nil
     }
 }

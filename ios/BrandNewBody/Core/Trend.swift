@@ -90,4 +90,39 @@ public enum Trend {
         }
         return text
     }
+
+    // MARK: - Cross-checking against lift performance
+
+    public enum StagnationSignal: Equatable, Sendable {
+        /// Neither series is moving. The fix is outside the programming —
+        /// food, sleep, or how consistently the plan's actually being
+        /// followed — not another tweak to sets or RIR.
+        case bothStalled
+        /// The scale is moving and the lifts aren't. Food isn't the
+        /// problem; something about the training or recovery is.
+        case gainingWithoutProgress
+    }
+
+    /// How much of what's currently being trained needs to have actually
+    /// stalled (`Lifts.stall`) before the weight trend's own verdict is
+    /// trusted as a joint read rather than a coincidence.
+    public static let stagnationLiftShare = 0.5
+
+    /// Neither the scale nor the log alone says whether the surplus needs
+    /// adjusting or the programming does — a slow rate could just as easily
+    /// be a bad two weeks of weigh-ins, and a stalled lift could just be
+    /// this exact lift's turn for a plateau. Together, sustained on both
+    /// sides at once, they say which lever actually needs pulling.
+    public static func stagnation(_ state: LogState) -> StagnationSignal? {
+        let trainedIDs = Plan.liftIDs.filter { !(state.lifts[$0] ?? []).isEmpty }
+        guard trainedIDs.count >= 3 else { return nil }
+        let stalled = trainedIDs.filter { Lifts.stall(state.liftHistory($0)) != nil }.count
+        guard Double(stalled) / Double(trainedIDs.count) >= stagnationLiftShare else { return nil }
+
+        switch verdict(state) {
+        case .slow: return .bothStalled
+        case .ok, .fast: return .gainingWithoutProgress
+        case .unknown: return nil
+        }
+    }
 }

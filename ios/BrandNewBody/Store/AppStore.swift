@@ -243,11 +243,15 @@ final class AppStore {
         if key == "sa-pyramid" {
             if record.done.contains(key) {
                 // Judged on the day being logged, not today, so back-filling
-                // last Saturday doesn't stamp this week's vest parity onto it.
-                // The cap is still the current one — there is no record of what
-                // it was a fortnight ago, and inventing one would be worse.
-                upsertPyramid(date: date, cap: state.pyramidCap,
-                              vestKg: Pyramid.isVestWeek(state, on: date) ? Pyramid.vestKg(state) : nil)
+                // last Saturday doesn't stamp this week's vest parity onto it
+                // — and `effectiveCap`/`isDeloadedToday` only ever reduce
+                // *today's* own pyramid, never a back-filled one, for the
+                // same reason. The persisted cap is still the current one —
+                // there is no record of what it was a fortnight ago, and
+                // inventing one would be worse.
+                upsertPyramid(date: date, cap: Pyramid.effectiveCap(state, on: date),
+                              vestKg: !Pyramid.isDeloadedToday(state, on: date) && Pyramid.isVestWeek(state, on: date)
+                                  ? Pyramid.vestKg(state) : nil)
             } else {
                 deletePyramid(date: date)
             }

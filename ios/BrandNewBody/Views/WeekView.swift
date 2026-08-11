@@ -130,7 +130,7 @@ private struct DayRow: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(day.items) { item in
                         let isPyramid = item.key == "sa-pyramid"
-                        Text((isPyramid ? Pyramid.itemName(state) : item.name) +
+                        Text((isPyramid ? Pyramid.itemName(state) : item.displayName(state)) +
                              (item.prescription.isEmpty && !isPyramid ? "" :
                                 " — " + (isPyramid ? Pyramid.itemPrescription : item.prescription)))
                             .font(Theme.body(12.5))

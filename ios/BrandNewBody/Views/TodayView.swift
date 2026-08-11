@@ -410,9 +410,11 @@ private struct DeloadPanel: View {
                 let left = Deload.daysLeft(state)
                 Panel(title: "Deload week", tag: "\(left) day\(left == 1 ? "" : "s") left") {
                     Note("""
-                        Halve the sets. Keep the weight. Skip the pyramid. Same exercises, same loads, \
-                        roughly half the work — cutting volume rather than intensity is what keeps the \
-                        strength while the fatigue clears. Tennis and the Thursday walk are fine.
+                        Halve the sets. Keep the weight. Same exercises, same loads, roughly half the work \
+                        — cutting volume rather than intensity is what keeps the strength while the fatigue \
+                        clears. The pyramid drops one round and skips the vest this week rather than being \
+                        skipped outright — it's conditioning, and it scales down with everything else \
+                        instead of dropping to zero. Tennis and the Thursday walk are fine.
                         """)
                     HStack {
                         ActionButton(title: "End it early") { store.endDeloadEarly() }
@@ -420,12 +422,13 @@ private struct DeloadPanel: View {
                     }
                 }
             } else if let signal = Deload.signal(state) {
-                Panel(title: "Take a deload", tag: "recovery is asking") {
-                    VerdictLine(text: "\(signal.reason) That is the signal to back off for a week — not because a calendar says so, but because your own data does.",
+                Panel(title: "Take a deload", tag: deloadTag(signal.kind)) {
+                    VerdictLine(text: "\(signal.reason) That's the signal to back off for a week.",
                                 tone: .fast)
                     Note("""
-                        A deload here is half the sets at the same weight, and no pyramid. It is one week. \
-                        The alternative is grinding through it and losing the next three.
+                        A deload here is half the sets at the same weight, and the pyramid a round lighter \
+                        with no vest. It is one week. The alternative is grinding through it and losing the \
+                        next three.
                         """)
                     HStack {
                         ActionButton(title: "Start a deload week", prominent: true) { store.startDeload() }
@@ -433,6 +436,14 @@ private struct DeloadPanel: View {
                     }
                 }
             }
+        }
+    }
+
+    private func deloadTag(_ kind: Deload.SignalKind) -> String {
+        switch kind {
+        case .recovery: return "recovery is asking"
+        case .performance: return "numbers are slipping"
+        case .calendar: return "due on the calendar"
         }
     }
 }
@@ -475,7 +486,7 @@ private struct SessionPanel: View {
             ForEach(day.items) { item in
                 let isPyramid = item.key == "sa-pyramid"
                 TickRow(
-                    title: isPyramid ? Pyramid.itemName(state, on: activeDate) : item.name,
+                    title: isPyramid ? Pyramid.itemName(state, on: activeDate) : item.displayName(state),
                     subtitle: isPyramid ? Pyramid.itemPrescription : item.prescription,
                     rir: item.rir,
                     isOn: canEdit && log.done.contains(item.key),
@@ -823,6 +834,21 @@ private struct PyramidPanel: View {
                             ((entry?.vestKg).map { " +\(Lifts.fmt($0))kg" } ?? "")
                     }
                     .joined(separator: " · "))
+            }
+
+            // The +/– buttons above still move the persisted, climbing cap —
+            // that's what they're for, and it has to keep working even
+            // mid-deload so a back-fill later this week isn't stuck editing
+            // the wrong number. What actually gets logged today is one round
+            // lighter regardless; this just says so, since the ticked
+            // checklist line already shows the reduced number without
+            // explaining why it doesn't match the cap set here.
+            if Pyramid.isDeloadedToday(state) {
+                Note("""
+                    Deload week: today's own pyramid logs at rounds 1–\(Pyramid.effectiveCap(state)) with no \
+                    vest, regardless of the cap above — the climb picks back up where it left off once the \
+                    week off ends.
+                    """, dimmed: true)
             }
         }
         .padding(.top, 6)

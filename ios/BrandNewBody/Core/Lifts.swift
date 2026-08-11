@@ -117,6 +117,18 @@ public enum Lifts {
         return kg < 0 ? "\(fmt(-kg)) kg assist" : "\(fmt(kg)) kg"
     }
 
+    /// The checklist name for a bodyweight lift, adjusted for whichever side
+    /// of bodyweight it's actually on right now. "Weighted pull-ups" reads
+    /// as a lie while you're still assisted, and "Pull-ups" alone says
+    /// nothing once you've moved on to adding load — assisted, bodyweight
+    /// and weighted are different exercises in practice, not different
+    /// numbers on the same one. Reads the most recent logged set; with no
+    /// history yet, the plain base name stands as written.
+    public static func displayName(_ state: LogState, id: String, base: String) -> String {
+        guard let kg = bestSet(state.liftHistory(id).last)?.kg, kg != 0 else { return base }
+        return kg < 0 ? "Assisted \(base.lowercased())" : "Weighted \(base.lowercased())"
+    }
+
     // MARK: - The target
 
     public struct Target: Equatable, Sendable {

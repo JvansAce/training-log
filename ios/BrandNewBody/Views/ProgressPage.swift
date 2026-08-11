@@ -179,6 +179,7 @@ private struct ProgressHero: View {
                 bulk is +0.5–0.75 kg per month.
                 """)
             WaistNote(state: state)
+            stagnationNote
 
             if !weights.isEmpty {
                 Reveal(title: "Edit weigh-ins") {
@@ -207,6 +208,26 @@ private struct ProgressHero: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Neither the scale nor the log alone says whether the surplus needs
+    /// adjusting or the programming does — see `Trend.stagnation`.
+    @ViewBuilder
+    private var stagnationNote: some View {
+        if let signal = Trend.stagnation(state) {
+            switch signal {
+            case .bothStalled:
+                VerdictLine(text: """
+                    Weight and the lifts are both stuck. That points outside the programming — food, sleep, \
+                    or how consistently the plan's actually being followed — not another tweak to sets or RIR.
+                    """, tone: .slow)
+            case .gainingWithoutProgress:
+                VerdictLine(text: """
+                    Weight is climbing while the lifts aren't. That's a training or recovery problem, not a \
+                    food one — check sleep, stress, and whether sessions are actually happening.
+                    """, tone: .fast)
             }
         }
     }
