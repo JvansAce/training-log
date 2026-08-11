@@ -472,9 +472,20 @@ private struct SessionPanel: View {
     @State private var noteLoaded = false
     @State private var noteLoadedFor = ""
     @State private var debouncer = Debouncer()
+    /// Whether the checklist is tidied away behind its "all ticked" summary.
+    /// Decided once per date rather than tracked live — see `syncCollapse`.
+    @State private var collapsed = false
+    @State private var collapsedFor = ""
 
     private var day: TrainingDay { Plan.day(dow) }
     private var log: DayRecord { state.day(activeDate) }
+
+    /// Counted over *this* day's own keys, never `log.done.count`. A Tuesday
+    /// with eight ticks previewing Friday's six items would otherwise read as
+    /// complete, because the count would be comparing today's tally against a
+    /// different day's list.
+    private var doneCount: Int { day.items.filter { log.done.contains($0.key) }.count }
+    private var isComplete: Bool { !day.items.isEmpty && doneCount == day.items.count }
 
     var body: some View {
         Panel(title: day.title, tag: tag) {
@@ -484,27 +495,44 @@ private struct SessionPanel: View {
                 workoutBanner(workouts)
             }
 
-            ForEach(day.items) { item in
-                let isPyramid = item.key == "sa-pyramid"
-                TickRow(
-                    title: isPyramid ? Pyramid.itemName(state, on: activeDate) : item.displayName(state),
-                    subtitle: isPyramid ? Pyramid.itemPrescription : item.prescription,
-                    rir: item.rir,
-                    isOn: canEdit && log.done.contains(item.key),
-                    enabled: canEdit,
-                    toggle: { store.toggleItem(item.key, on: activeDate) }
-                ) {
-                    if let liftID = item.liftID, liftID != "pyramid" {
-                        LiftRow(liftID: liftID, item: item, canEdit: canEdit, activeDate: activeDate)
+            if collapsed {
+                completedSummary
+            } else {
+                ForEach(day.items) { item in
+                    let isPyramid = item.key == "sa-pyramid"
+                    TickRow(
+                        title: isPyramid ? Pyramid.itemName(state, on: activeDate) : item.displayName(state),
+                        subtitle: isPyramid ? Pyramid.itemPrescription : item.prescription,
+                        rir: item.rir,
+                        isOn: canEdit && log.done.contains(item.key),
+                        enabled: canEdit,
+                        toggle: { store.toggleItem(item.key, on: activeDate) }
+                    ) {
+                        if let liftID = item.liftID, liftID != "pyramid" {
+                            LiftRow(liftID: liftID, item: item, canEdit: canEdit, activeDate: activeDate)
+                        }
                     }
                 }
-            }
 
-            if dow == 6 { PyramidPanel(state: state) }
+                if dow == 6 { PyramidPanel(state: state) }
 
-            if let rest = day.restSeconds, canEdit {
-                ActionButton(title: "Start rest timer · \(RestTimer.format(rest))") {
-                    timer.start(seconds: rest)
+                if let rest = day.restSeconds, canEdit {
+                    ActionButton(title: "Start rest timer · \(RestTimer.format(rest))") {
+                        timer.start(seconds: rest)
+                    }
+                }
+
+                // Offered only once it's all ticked, so it never reads as a way
+                // to hide work still to do.
+                if isComplete, canEdit {
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) { collapsed = true }
+                    } label: {
+                        Text("Tidy this away")
+                            .font(Theme.mono(10, weight: .bold))
+                            .foregroundStyle(Theme.muted)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -522,10 +550,11 @@ private struct SessionPanel: View {
                 ActionButton(title: "Back to today", action: onBackToToday)
             }
         }
-        .onAppear { load() }
+        .onAppear { load(); syncCollapse() }
         .onChange(of: activeDate) { old, _ in
             debouncer.flush { flushNote(for: old) }
             load()
+            syncCollapse()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { debouncer.flush { flushNote(for: activeDate) } }
@@ -533,8 +562,53 @@ private struct SessionPanel: View {
         .onDisappear { debouncer.flush { flushNote(for: activeDate) } }
     }
 
+    /// The soft lock. Nothing is disabled and nothing is hidden that can't be
+    /// got back in one tap — a finished session simply stops occupying the
+    /// screen it was occupying while you were still working through it. The
+    /// row is the tap target, and it says "edit" rather than showing a lock,
+    /// because that is what tapping it does.
+    private var completedSummary: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) { collapsed = false }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Theme.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("All \(day.items.count) ticked")
+                        .font(Theme.body(15, weight: .semibold))
+                        .foregroundStyle(Theme.bone)
+                    Text("logged sets and notes are kept")
+                        .font(Theme.body(12.5))
+                        .foregroundStyle(Theme.muted)
+                }
+                Spacer(minLength: 8)
+                Text("EDIT")
+                    .font(Theme.mono(9.5))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.muted)
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Session complete, all \(day.items.count) items ticked. Activate to edit.")
+    }
+
+    /// Collapsed state is decided when the day is opened, never live off
+    /// `isComplete`. Ticking the last box mid-session must not fold the
+    /// checklist away underneath you — the sets for that last exercise are
+    /// usually typed *after* its box goes green. So finishing a session leaves
+    /// it open, and it is tidy the next time you come back to it.
+    private func syncCollapse() {
+        guard collapsedFor != activeDate else { return }
+        collapsedFor = activeDate
+        collapsed = isComplete
+    }
+
     private func workoutBanner(_ workouts: [DetectedWorkout]) -> some View {
-        let complete = log.done.count >= day.items.count
+        let complete = isComplete
         return VStack(alignment: .leading, spacing: 8) {
             Text("WHOOP recorded " + workouts.map {
                 ($0.sport ?? "a workout")
@@ -579,8 +653,13 @@ private struct SessionPanel: View {
     }
 
     private var tag: String {
-        if let editingDate { return String(editingDate.dropFirst(5)) }
-        if canEdit { return "today · \(day.tag)" }
+        if let editingDate {
+            return String(editingDate.dropFirst(5)) + (isComplete ? " · complete" : "")
+        }
+        // "complete" replaces the rest-time hint rather than joining it: the
+        // hint is guidance for work still to do, and `day.tag` is long enough
+        // that appending to it would wrap the panel header.
+        if canEdit { return isComplete ? "today · complete" : "today · \(day.tag)" }
         return "\(day.label) · preview"
     }
 }
@@ -1011,16 +1090,74 @@ private struct MobilityPanel: View {
     var activeDate: String
     @Environment(AppStore.self) private var store
 
+    /// Same soft lock as the session panel, and for the same reason: four
+    /// drills that are all ticked are four rows of nothing left to do.
+    @State private var collapsed = false
+    @State private var collapsedFor = ""
+
+    /// Gated on `canEdit` exactly as the rows are. The drill keys are the same
+    /// every day, so unlike the session panel this can't rely on a different
+    /// weekday's keys being absent: previewing Friday on a Tuesday whose
+    /// mobility is done would otherwise collapse to "all 4 done" above rows
+    /// that render unticked, because that is what a non-editable day shows.
+    private var done: Set<String> { canEdit ? state.day(activeDate).mobility : [] }
+    private var doneCount: Int { Plan.mobility.filter { done.contains($0.key) }.count }
+    private var isComplete: Bool { doneCount == Plan.mobility.count }
+
     var body: some View {
-        Panel(title: "Mobility", tag: "daily · 5–10 min") {
-            ForEach(Plan.mobility) { drill in
-                TickRow(title: drill.name,
-                        subtitle: drill.prescription,
-                        isOn: canEdit && state.day(activeDate).mobility.contains(drill.key),
-                        enabled: canEdit,
-                        toggle: { store.toggleMobility(drill.key, on: activeDate) })
+        Panel(title: "Mobility", tag: isComplete ? "all \(doneCount) done" : "daily · 5–10 min") {
+            if collapsed {
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { collapsed = false }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Theme.green)
+                        Text("All \(Plan.mobility.count) drills done")
+                            .font(Theme.body(15, weight: .semibold))
+                            .foregroundStyle(Theme.bone)
+                        Spacer(minLength: 8)
+                        Text("EDIT")
+                            .font(Theme.mono(9.5))
+                            .tracking(1.2)
+                            .foregroundStyle(Theme.muted)
+                    }
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Mobility complete, all \(Plan.mobility.count) drills done. Activate to edit.")
+            } else {
+                ForEach(Plan.mobility) { drill in
+                    TickRow(title: drill.name,
+                            subtitle: drill.prescription,
+                            isOn: canEdit && done.contains(drill.key),
+                            enabled: canEdit,
+                            toggle: { store.toggleMobility(drill.key, on: activeDate) })
+                }
+                if isComplete, canEdit {
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) { collapsed = true }
+                    } label: {
+                        Text("Tidy this away")
+                            .font(Theme.mono(10, weight: .bold))
+                            .foregroundStyle(Theme.muted)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
+        .onAppear(perform: syncCollapse)
+        .onChange(of: activeDate) { _, _ in syncCollapse() }
+    }
+
+    /// Decided on entry, never live — ticking the fourth drill must not make
+    /// the panel fold up under the thumb that just tapped it.
+    private func syncCollapse() {
+        guard collapsedFor != activeDate else { return }
+        collapsedFor = activeDate
+        collapsed = isComplete
     }
 }
 
