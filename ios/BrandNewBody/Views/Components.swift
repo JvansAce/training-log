@@ -314,23 +314,6 @@ struct MacroGrid: View {
     }
 }
 
-/// The one enormous number at the top of a panel.
-struct BigStat: View {
-    var value: String
-    var unit: String
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(value)
-                .font(Theme.display(52))
-                .foregroundStyle(Theme.bone)
-            Text(unit)
-                .font(Theme.mono(13))
-                .foregroundStyle(Theme.muted)
-        }
-    }
-}
-
 struct Chip: View {
     var text: String
     var highlighted: Bool = false
