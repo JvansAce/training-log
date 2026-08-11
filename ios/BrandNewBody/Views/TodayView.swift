@@ -410,11 +410,12 @@ private struct DeloadPanel: View {
                 let left = Deload.daysLeft(state)
                 Panel(title: "Deload week", tag: "\(left) day\(left == 1 ? "" : "s") left") {
                     Note("""
-                        Halve the sets. Keep the weight. Same exercises, same loads, roughly half the work \
-                        — cutting volume rather than intensity is what keeps the strength while the fatigue \
-                        clears. The pyramid drops one round and skips the vest this week rather than being \
-                        skipped outright — it's conditioning, and it scales down with everything else \
-                        instead of dropping to zero. Tennis and the Thursday walk are fine.
+                        Halve the sets. Keep the weight. Stop every set 3–4 reps short of failure. Same \
+                        exercises, same loads, roughly half the work and none of it taken close to the \
+                        limit — cutting volume and effort rather than intensity is what keeps the strength \
+                        while the fatigue clears. The pyramid drops one round and skips the vest this week \
+                        rather than being skipped outright — it's conditioning, and it scales down with \
+                        everything else instead of dropping to zero. Tennis and the Thursday walk are fine.
                         """)
                     HStack {
                         ActionButton(title: "End it early") { store.endDeloadEarly() }
@@ -426,9 +427,9 @@ private struct DeloadPanel: View {
                     VerdictLine(text: "\(signal.reason) That's the signal to back off for a week.",
                                 tone: .fast)
                     Note("""
-                        A deload here is half the sets at the same weight, and the pyramid a round lighter \
-                        with no vest. It is one week. The alternative is grinding through it and losing the \
-                        next three.
+                        A deload here is half the sets at the same weight, stopped 3–4 reps short, and the \
+                        pyramid a round lighter with no vest. It is one week. The alternative is grinding \
+                        through it and losing the next three.
                         """)
                     HStack {
                         ActionButton(title: "Start a deload week", prominent: true) { store.startDeload() }

@@ -149,7 +149,15 @@ public enum Plan {
                              prescription: "3 × 12–15 — antagonist to the presses",
                              rir: "0–2", liftID: "facepull"),
                     // Shares the `lat` id with Friday on purpose.
-                    Exercise(key: "tu-lat", name: "Lateral raises", prescription: "3 × 12–15 — strict, no swing",
+                    //
+                    // 3 up to 4, with Friday going 4 to 5: side delts were the
+                    // other group the review's table called borderline-low
+                    // against the stated goal, at 7 sets a week, and 3.1's
+                    // instruction only covered the rear. Shoulders are the most
+                    // visible part of what this programme is for, and lateral
+                    // raises are the cheapest sets in the week to add — light
+                    // load, 60–90s rest, almost no systemic cost. 9 a week now.
+                    Exercise(key: "tu-lat", name: "Lateral raises", prescription: "4 × 12–15 — strict, no swing",
                              rir: "0–2", liftID: "lat"),
                 ]),
 
@@ -216,7 +224,9 @@ public enum Plan {
                              liftID: "pullup", isBodyweight: true),
                     Exercise(key: "fr-flat", name: "Flat DB press", prescription: "4 × 10–12", rir: "1–2", liftID: "flat"),
                     Exercise(key: "fr-crow", name: "Cable or band row", prescription: "3 × 12", rir: "1–2", liftID: "crow"),
-                    Exercise(key: "fr-lat", name: "Lateral raises", prescription: "4 × 15", rir: "0–1", liftID: "lat"),
+                    // See the note on Tuesday's lateral raises: 4 to 5 here,
+                    // 3 to 4 there, side delts from 7 a week to 9.
+                    Exercise(key: "fr-lat", name: "Lateral raises", prescription: "5 × 15", rir: "0–1", liftID: "lat"),
                     // Promoted from a warm-up to real loaded sets — rear delts had
                     // no working volume anywhere in the week.
                     Exercise(key: "fr-facepull", name: "Face pulls",
