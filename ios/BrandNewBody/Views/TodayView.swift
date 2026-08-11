@@ -609,6 +609,37 @@ private struct LiftRow: View {
 
     private var state: LogState { store.state }
 
+    /// The most recent session that isn't the one being edited — what "last
+    /// time" means, per set position.
+    private var previousSets: [LiftSet] {
+        state.liftHistory(liftID).last { $0.date != activeDate }?.sets ?? []
+    }
+
+    /// How many rows to put on screen before anything has been typed.
+    ///
+    /// The prescription is the source of truth it already is everywhere else:
+    /// "4 × 4–6" means four rows standing ready, not one row and three taps
+    /// of "+ set" between sets with a bar in your hands. Reads the set count
+    /// via `prescribedSets` rather than `parseScheme`, so "3 × max reps" —
+    /// which has no rep range to parse and so no progression target — still
+    /// correctly stands up three rows. Anything that names no count at all
+    /// falls back to however many sets the last session actually had.
+    private var targetRowCount: Int {
+        let prescribed = Lifts.prescribedSets(item.prescription)
+        let fallback = previousSets.isEmpty ? 1 : previousSets.count
+        return min(Lifts.maxSets, max(1, prescribed ?? fallback))
+    }
+
+    private func previousKg(_ index: Int) -> String? {
+        guard index < previousSets.count, let kg = previousSets[index].kg, kg != 0 else { return nil }
+        return Lifts.fmt(kg)
+    }
+
+    private func previousReps(_ index: Int) -> String? {
+        guard index < previousSets.count else { return nil }
+        return String(previousSets[index].reps)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if canEdit {
@@ -618,10 +649,10 @@ private struct LiftRow: View {
                             .font(Theme.mono(10))
                             .foregroundStyle(Theme.muted)
                             .frame(width: 12)
-                        numberField("kg", text: $drafts[index].kg)
+                        numberField("kg", text: $drafts[index].kg, hint: previousKg(index))
                         if item.isBodyweight { signToggle(index) }
                         Text("×").foregroundStyle(Theme.muted)
-                        numberField("reps", text: $drafts[index].reps)
+                        numberField("reps", text: $drafts[index].reps, hint: previousReps(index))
                     }
                 }
                 if drafts.count < Lifts.maxSets {
@@ -681,9 +712,16 @@ private struct LiftRow: View {
         .onDisappear { debouncer.flush { flush(for: activeDate) } }
     }
 
-    private func numberField(_ placeholder: String, text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
-            .keyboardType(placeholder == "kg" ? .decimalPad : .numberPad)
+    /// `hint` is last session's number for this set position, shown as the
+    /// field's own placeholder rather than as a separate label beside it: it
+    /// costs no width, it sits exactly where the thumb and the eye already
+    /// are, and it clears itself the moment you type — so a row you've
+    /// filled reads as your number and an empty one reads as the number to
+    /// beat. `kind` still decides the keypad, which is why it stays separate
+    /// from whatever ends up displayed.
+    private func numberField(_ kind: String, text: Binding<String>, hint: String?) -> some View {
+        TextField(hint ?? kind, text: text)
+            .keyboardType(kind == "kg" ? .decimalPad : .numberPad)
             .font(Theme.mono(14))
             .foregroundStyle(Theme.bone)
             .multilineTextAlignment(.center)
@@ -725,9 +763,15 @@ private struct LiftRow: View {
         guard loadedFor != activeDate else { return }
         loadedFor = activeDate
         let existing = state.liftHistory(liftID).first { $0.date == activeDate }?.sets ?? []
-        drafts = existing.isEmpty
-            ? [DraftSet()]
-            : existing.map { DraftSet(kg: $0.kg.map(Lifts.fmt) ?? "", reps: String($0.reps)) }
+        var rows = existing.map { DraftSet(kg: $0.kg.map(Lifts.fmt) ?? "", reps: String($0.reps)) }
+        // Pad out to the prescribed count so every set is already on screen.
+        // Blank rows never become logged sets: `flush` drops any position that
+        // doesn't parse and has nothing already saved behind it, which is the
+        // same guard that stops a half-retyped rep count from deleting a set.
+        // Never truncates either — five sets logged against a prescription of
+        // three keeps all five.
+        while rows.count < targetRowCount { rows.append(DraftSet()) }
+        drafts = rows
     }
 
     /// Local `drafts` already updated the instant the keystroke landed —

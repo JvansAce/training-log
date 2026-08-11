@@ -226,6 +226,40 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(Lifts.parseScheme("warm-up"))
     }
 
+    /// The row-prefill count, which needs only the set count and must not be
+    /// blocked by a rep side `parseScheme` rightly refuses to read.
+    func testPrescribedSetsReadsTheCountEvenWithoutARepRange() {
+        XCTAssertEqual(Lifts.prescribedSets("4 × 4–6"), 4)
+        XCTAssertEqual(Lifts.prescribedSets("3 × max reps — first two @ 1–2 RIR, third set to failure"), 3)
+        XCTAssertNil(Lifts.parseScheme("3 × max reps"), "still no numeric range to target")
+        XCTAssertEqual(Lifts.prescribedSets("2 × 12 each"), 2)
+        XCTAssertEqual(Lifts.prescribedSets("3 × 10 / leg"), 3)
+        // Anchored, so a count buried mid-sentence is never mistaken for the
+        // prescription's own — warm-ups and RIR notes both contain digits.
+        XCTAssertNil(Lifts.prescribedSets("warm-up 2×15"))
+        XCTAssertNil(Lifts.prescribedSets("leg swings · ankle bounces · 2×5 easy pogo hops"))
+        XCTAssertNil(Lifts.prescribedSets(""))
+        XCTAssertNil(Lifts.prescribedSets("play"))
+    }
+
+    /// Every loggable lift has to name its own set count, or its rows fall
+    /// back to whatever the last session happened to contain — which on a
+    /// first-ever session means a single row and the "+ set" tapping this
+    /// was built to remove.
+    func testEveryLoggableLiftNamesItsSetCount() {
+        for dow in Plan.order {
+            for item in Plan.day(dow).items {
+                guard let id = item.liftID, id != "pyramid" else { continue }
+                let sets = Lifts.prescribedSets(item.prescription)
+                XCTAssertNotNil(sets, "\(item.key) names no set count: \(item.prescription)")
+                if let sets {
+                    XCTAssertLessThanOrEqual(sets, Lifts.maxSets,
+                                             "\(item.key) prescribes more sets than a row can hold")
+                }
+            }
+        }
+    }
+
     func testBestSetPrefersLoadOverReps() {
         let record = LiftRecord(date: today, sets: [
             LiftSet(kg: 60, reps: 10), LiftSet(kg: 80, reps: 5),

@@ -101,6 +101,27 @@ public enum Lifts {
         return Scheme(sets: sets, low: low, high: high)
     }
 
+    private static let setCountRegex: NSRegularExpression? =
+        try? NSRegularExpression(pattern: #"^\s*(\d+)\s*×"#)
+
+    /// Just the number of sets a prescription names, ignoring the rep side of
+    /// it entirely.
+    ///
+    /// `parseScheme` is right to return nil for "3 × max reps" — there is no
+    /// numeric range there to build a progression target from. But the
+    /// prescription still plainly names three sets, and deciding how many
+    /// input rows to stand up needs only that. Anchored to the start of the
+    /// string so it reads the prescription's own leading count and never a
+    /// "2×5" buried in a warm-up description or the "1–2" of an RIR note.
+    public static func prescribedSets(_ text: String) -> Int? {
+        guard let regex = setCountRegex else { return nil }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              let sets = Int(ns.substring(with: match.range(at: 1))), sets > 0
+        else { return nil }
+        return sets
+    }
+
     /// Conservative, and smaller for light lifts: +2.5 kg on a 10 kg lateral
     /// raise is a 25% jump, which is not a progression, it is a new exercise.
     public static func loadStep(_ kg: Double) -> Double {
