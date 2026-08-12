@@ -1170,8 +1170,14 @@ private struct MobilityPanel: View {
                             enabled: canEdit,
                             toggle: { store.toggleMobility(drill.key, on: activeDate) })
                 }
+                // Held stretches past ~60s/side measurably blunt the next
+                // set's power output — real, dose-dependent, replicated —
+                // so this reads better as a cooldown than a warm-up on a
+                // lifting day. Daily isn't shown to beat 3–4×/week for
+                // range of motion either; it just doesn't cost anything.
+                Note("Best after training, not right before — a long held stretch can blunt the next set. Daily is fine, not required.")
                 if drills.count > Plan.mobility.count {
-                    Note("Today's extra drill targets what the session above already loads — not a general routine, just the one joint this day's lifting leans on hardest.")
+                    Note("Today's extra drill matches what the day above demands — rotation on the tennis day, extension on the press days, ankle range on the squat days.")
                 }
                 if isComplete, canEdit {
                     Button {

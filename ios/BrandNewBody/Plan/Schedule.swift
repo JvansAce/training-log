@@ -326,19 +326,53 @@ public enum Plan {
         public let prescription: String
     }
 
+    /// Revised against an actual literature pass rather than fitness-content
+    /// convention (full sourcing kept outside the codebase). Two of the
+    /// original four held up as reasonable defaults with no change needed;
+    /// one got a cue that measurably matters more than the stretch itself;
+    /// one got replaced outright.
+    ///
+    /// - Squat hold: the *link* between ankle/hip range and squat depth is
+    ///   real, but no trial tests holding the bottom position itself as an
+    ///   intervention — kept as cheap position rehearsal, not corrective
+    ///   therapy.
+    /// - Couch stretch: a 2024 crossover trial found actively bracing a
+    ///   posterior pelvic tilt during the stretch beats the stretch alone at
+    ///   reducing hip-flexor tension — the cue matters more than the named
+    ///   stretch, so it's now part of the prescription, not left implicit.
+    /// - Shoulder dislocates → cross-body stretch: no trial validates the
+    ///   ballistic band/broomstick drill, and general shoulder-instability
+    ///   guidance flags the exact position it cycles through — abduction
+    ///   combined with external rotation — as where an unstable shoulder is
+    ///   most likely to give way. This program already drives that same
+    ///   end-range on tennis day and under a bar on Tuesday/Friday, so a
+    ///   ballistic version adds risk without adding anything the week isn't
+    ///   already providing. A controlled, static cross-body stretch targets
+    ///   the same posterior capsule without the swing.
+    /// - Dead hang: kept, but on its actual evidence — grip endurance and
+    ///   scapular control transfer to a program with three separate
+    ///   pull-up/row days, not the "decompresses the shoulder" claim that
+    ///   circulates with it, which no controlled trial has tested directly.
     public static let mobility: [Mobility] = [
         .init(key: "mob-squat", name: "Deep squat hold", prescription: "2 × 1 min"),
-        .init(key: "mob-couch", name: "Couch stretch", prescription: "1 min / side"),
-        .init(key: "mob-dislocate", name: "Shoulder dislocates", prescription: "2 × 10, band or broomstick"),
+        .init(key: "mob-couch", name: "Couch stretch",
+              prescription: "1 min / side — tuck the pelvis under, don't just lean into it"),
+        .init(key: "mob-shoulder", name: "Cross-body shoulder stretch",
+              prescription: "2 × 30s / side — pull the arm across the chest, controlled, not ballistic"),
         .init(key: "mob-hang", name: "Dead hang", prescription: "2 × 30–45s"),
     ]
 
-    /// The drill order as it stood while ticks were positions. **Frozen.** New
-    /// drills go on the end of `mobility`; nothing is ever inserted here, or
-    /// every already-recorded tick would translate to the wrong drill.
-    /// `testMobilityKeysAreStableAndUnique` fails if the two drift apart.
+    /// The drill order as it stood while ticks were positions. **Frozen** in
+    /// length and order — a new drill still goes on the end of `mobility`,
+    /// never inserted here, or every already-recorded tick would translate to
+    /// the wrong drill. Renaming what a position points to (as happened at
+    /// index 2, dislocates → cross-body stretch) is not an insertion and
+    /// stays safe, the same way renaming a lift in `Schedule` doesn't corrupt
+    /// its liftID-keyed history — the position, not the label, is what a
+    /// legacy tick is anchored to. `testMobilityKeysAreStableAndUnique` fails
+    /// if the two drift apart.
     private static let legacyMobilityOrder = [
-        "mob-squat", "mob-couch", "mob-dislocate", "mob-hang",
+        "mob-squat", "mob-couch", "mob-shoulder", "mob-hang",
     ]
 
     /// Translates an old positional tick, or nil if the position never existed.
@@ -347,21 +381,34 @@ public enum Plan {
     }
 
     /// One extra drill layered on top of the fixed four, chosen by what the
-    /// day's own lifting already loads rather than by the calendar. Tuesday
-    /// and Friday both press overhead — thoracic extension is what lets that
-    /// range come from the spine instead of the lower back arching for it.
-    /// Wednesday and Saturday both squat — ankle dorsiflexion is what lets
-    /// the knee travel over the toe instead of the heel lifting to fake it.
-    /// Monday's warm-up already has rotation built in for tennis, and Sunday
-    /// already carries its own dedicated long-mobility block (`su-mob`), so
-    /// neither gets a second one here. Thursday is the plan's named
-    /// lowest-priority day and stays a plain rest from this too.
+    /// day itself demands rather than by the calendar:
+    /// - Monday is tennis — a rotational sport — so it gets thoracic
+    ///   *rotation*. An 8-week multimodal mobility program in competitive
+    ///   tennis players measurably increased thoracic mobility and shoulder
+    ///   internal/external rotation, with serve accuracy and velocity
+    ///   improving alongside it rather than suffering for it — the strongest
+    ///   single piece of evidence in this whole redesign, and it's specific
+    ///   to this exact sport.
+    /// - Tuesday and Friday both press overhead, which wants thoracic
+    ///   *extension* instead — the range a press needs to come from the
+    ///   spine rather than the lower back arching to fake it.
+    /// - Wednesday and Saturday both squat — ankle dorsiflexion (the
+    ///   knee-to-wall drill) is a validated clinical measure that tracks
+    ///   with squat depth and mechanics, though the trials that actually
+    ///   moved someone's range used more volume than one minute a day gets
+    ///   you; treat this as day-relevant, not a guaranteed fix.
+    /// - Thursday (the plan's own lowest-priority day) and Sunday (which
+    ///   already has its own 20-minute mobility block, `su-mob`) get nothing
+    ///   extra here.
     ///
     /// Additive only, and never touches `mobility` or `legacyMobilityOrder` —
     /// a day with no case here just runs the same four drills everyone else
     /// runs.
     public static func mobilityFocus(dow: Int) -> Mobility? {
         switch dow {
+        case 1:
+            return .init(key: "mob-tspine-rotation", name: "Thoracic rotation (open book or quadruped)",
+                         prescription: "8–10 / side, slow — follow the top hand with your eyes")
         case 2, 5:
             return .init(key: "mob-tspine-extension", name: "Thoracic extension (bench or roller)",
                          prescription: "8–10 reps, hold 2s at the top")

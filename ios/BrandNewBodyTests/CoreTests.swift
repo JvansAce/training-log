@@ -956,12 +956,13 @@ final class CoreTests: XCTestCase {
         }
     }
 
-    /// Pressing days get thoracic extension, squat days get ankle
-    /// dorsiflexion; Monday (tennis, no lifting), Thursday (lowest-priority
-    /// rest) and Sunday (own dedicated long-mobility block) get nothing extra.
-    func testMobilityFocusMatchesEachDaysOwnLifting() {
+    /// The tennis day gets thoracic rotation, pressing days get thoracic
+    /// extension, squat days get ankle dorsiflexion; Thursday
+    /// (lowest-priority rest) and Sunday (own dedicated long-mobility block)
+    /// get nothing extra.
+    func testMobilityFocusMatchesEachDaysOwnDemands() {
         XCTAssertNil(Plan.mobilityFocus(dow: 0))
-        XCTAssertNil(Plan.mobilityFocus(dow: 1))
+        XCTAssertEqual(Plan.mobilityFocus(dow: 1)?.key, "mob-tspine-rotation")
         XCTAssertEqual(Plan.mobilityFocus(dow: 2)?.key, "mob-tspine-extension")
         XCTAssertEqual(Plan.mobilityFocus(dow: 3)?.key, "mob-ankle")
         XCTAssertNil(Plan.mobilityFocus(dow: 4))
