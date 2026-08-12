@@ -97,7 +97,12 @@ struct TodayView: View {
                     viewing = DateKit.dow(date)
                     showBackfillPicker = false
                 }
-                .presentationDetents([.height(360)])
+                // A fixed 360pt used to clip this: the title, note and
+                // "Edit that day" button all got pushed out of the visible
+                // sheet by the graphical calendar alone, which wants more
+                // than that on its own — leaving no way to confirm a date.
+                // `.medium`/`.large` size to the actual content instead.
+                .presentationDetents([.medium, .large])
             }
         }
     }
@@ -1243,18 +1248,23 @@ private struct BackfillSheet: View {
     var onPick: (Date) -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Back-fill a past day")
-                .font(Theme.display(22))
-                .foregroundStyle(Theme.bone)
-            Note("Edits that day's checklist and lifts directly, instead of losing the session.")
-            DatePicker("", selection: $selection, in: ...Date(), displayedComponents: .date)
-                .datePickerStyle(.graphical)
-            ActionButton(title: "Edit that day", prominent: true) { onPick(selection) }
-            Spacer(minLength: 0)
+        // Scrollable so the confirm button below the calendar is always
+        // reachable, even on a smaller screen or a `.medium` detent that
+        // still can't fit everything at once — the fixed-height sheet this
+        // replaced could clip it out entirely with no way to get to it.
+        ScrollView {
+            VStack(spacing: 16) {
+                Text("Back-fill a past day")
+                    .font(Theme.display(22))
+                    .foregroundStyle(Theme.bone)
+                Note("Edits that day's checklist and lifts directly, instead of losing the session.")
+                DatePicker("", selection: $selection, in: ...Date(), displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                ActionButton(title: "Edit that day", prominent: true) { onPick(selection) }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity)
         .background(Theme.ink)
     }
 }
