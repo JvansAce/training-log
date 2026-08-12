@@ -199,8 +199,10 @@ public enum Mind {
         Array(MindPlan.ladder.prefix(max(1, min(MindPlan.ladder.count, cap))))
     }
 
-    public static func isLadderDay(_ state: LogState) -> Bool {
-        state.todayDow == 6
+    /// `dow` defaults to today's — pass the weekday of a back-filled date to
+    /// ask whether *that* day was a ladder day instead.
+    public static func isLadderDay(_ state: LogState, dow: Int? = nil) -> Bool {
+        (dow ?? state.todayDow) == 6
     }
 
     // MARK: - Streaks and the verdict

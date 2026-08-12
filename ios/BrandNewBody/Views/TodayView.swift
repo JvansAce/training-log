@@ -92,7 +92,8 @@ struct TodayView: View {
                 Spacer()
             }
             .sheet(isPresented: $showBackfillPicker) {
-                BackfillSheet(selection: $backfillDate) { date in
+                BackfillSheet(selection: $backfillDate,
+                              note: "Edits that day's checklist and lifts directly, instead of losing the session.") { date in
                     editingDate = DateKit.key(date)
                     viewing = DateKit.dow(date)
                     showBackfillPicker = false
@@ -1243,8 +1244,11 @@ struct TextEditorField: View {
     }
 }
 
-private struct BackfillSheet: View {
+/// Shared by both Body and Mind's "forgot to log a day?" flow — the picker
+/// itself doesn't know which programme it's back-filling, only `note` does.
+struct BackfillSheet: View {
     @Binding var selection: Date
+    var note: String
     var onPick: (Date) -> Void
 
     var body: some View {
@@ -1257,7 +1261,7 @@ private struct BackfillSheet: View {
                 Text("Back-fill a past day")
                     .font(Theme.display(22))
                     .foregroundStyle(Theme.bone)
-                Note("Edits that day's checklist and lifts directly, instead of losing the session.")
+                Note(note)
                 DatePicker("", selection: $selection, in: ...Date(), displayedComponents: .date)
                     .datePickerStyle(.graphical)
                 ActionButton(title: "Edit that day", prominent: true) { onPick(selection) }

@@ -6,7 +6,17 @@ struct MindTodayView: View {
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
 
+    /// Set to a past date to back-fill a day that was never logged, exactly
+    /// like Body's own "Forgot to log a day?" — the store's mind-write
+    /// methods already take an explicit `on: date`, so this is purely a view
+    /// wiring change, not a data-model one.
+    @State private var editingDate: String? = nil
+    @State private var showBackfillPicker = false
+    @State private var backfillDate = Date()
+
     private var state: LogState { store.state }
+    private var activeDate: String { editingDate ?? state.today }
+    private var activeDow: Int { DateKit.dow(key: activeDate) ?? state.todayDow }
 
     var body: some View {
         if state.mindStartDate == nil {
@@ -28,31 +38,75 @@ struct MindTodayView: View {
             LazyVStack(alignment: .leading, spacing: 22) {
                 MindHero(state: state)
 
-                Panel(title: "Today",
-                      tag: "\(Plan.dayNames[state.todayDow] ?? "") · week \(Mind.weeksIn(state) + 1)") {
+                backfillRow
+
+                Panel(title: "Today", tag: tag) {
                     Note(intro)
                     ForEach(Mind.activePractices(state)) { practice in
-                        PracticeRow(practice: practice)
+                        PracticeRow(practice: practice, activeDate: activeDate)
                     }
                 }
 
-                if Mind.isLadderDay(state) { LadderPanel() }
-                if Mind.activePractices(state).contains(where: { $0.kind == .drill }) {
-                    CharismaPanel()
+                // The ladder follows the day being viewed, not real-today —
+                // back-filling a missed Saturday should still offer its
+                // rungs. Cap adjustment stays today-only; see `LadderPanel`.
+                if Mind.isLadderDay(state, dow: activeDow) {
+                    LadderPanel(activeDate: activeDate, canAdjustCap: editingDate == nil)
                 }
-                UnlockPanel()
+                // Progression chrome, not this day's content — skip-drill and
+                // unlock-next-practice both mutate state going forward, which
+                // makes no sense while looking at a back-filled past day.
+                if editingDate == nil {
+                    if Mind.activePractices(state).contains(where: { $0.kind == .drill }) {
+                        CharismaPanel()
+                    }
+                    UnlockPanel()
+                }
             }
         }
     }
 
+    @ViewBuilder
+    private var backfillRow: some View {
+        if let editing = editingDate {
+            HStack {
+                PTag("editing \(editing)", tint: Theme.amber)
+                Spacer()
+                ActionButton(title: "Back to today") { editingDate = nil }
+            }
+        } else {
+            HStack {
+                ActionButton(title: "Forgot to log a day?") { showBackfillPicker = true }
+                Spacer()
+            }
+            .sheet(isPresented: $showBackfillPicker) {
+                BackfillSheet(selection: $backfillDate,
+                              note: "Edits that day's practices and journal directly, instead of losing the day.") { date in
+                    editingDate = DateKit.key(date)
+                    showBackfillPicker = false
+                }
+                .presentationDetents([.medium, .large])
+            }
+        }
+    }
+
+    private var tag: String {
+        if let editingDate {
+            return String(editingDate.dropFirst(5)) + " · " + (Plan.dayNames[activeDow] ?? "")
+        }
+        return "\(Plan.dayNames[state.todayDow] ?? "") · week \(Mind.weeksIn(state) + 1)"
+    }
+
     private var intro: String {
         let active = Mind.activePractices(state)
-        if let kind = TimeOff.today(state) {
+        if let kind = TimeOff.kind(state, on: activeDate) {
+            let day = editingDate == nil ? "today" : "that day"
+            let dayCapitalized = editingDate == nil ? "Today" : "That day"
             return """
-                Marked \(kind.rawValue) — none of this is owed today. Reading and journalling survive a \
+                Marked \(kind.rawValue) — none of this was owed \(day). Reading and journalling survive a \
                 fever and a departure lounge better than squats do, so the list is still here if you want \
-                it. Today is out of the adherence window either way: it will not count against you, and it \
-                will not count for you.
+                it. \(dayCapitalized) is out of the adherence window either way: it will not count against \
+                you, and it will not count for you.
                 """
         }
         if active.count == 1 {
@@ -103,6 +157,8 @@ private struct MindHero: View {
 
 private struct PracticeRow: View {
     var practice: MindPlan.Practice
+    /// Today, or the day being back-filled — see `MindTodayView.editingDate`.
+    var activeDate: String
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
     @Environment(\.scenePhase) private var scenePhase
@@ -113,14 +169,14 @@ private struct PracticeRow: View {
     /// into it — without this, the reassignment itself would look like a
     /// user edit and get scheduled for a write straight back.
     @State private var loaded = false
-    /// The date whatever's currently in `minutes`/`journal` belongs to. Mind
-    /// has no back-fill, so every write targets `state.today` — but an
+    /// The date whatever's currently in `minutes`/`journal` belongs to. An
     /// installed app is resumed, not relaunched, and this view's identity
     /// (keyed by the practice, not the day) survives sitting in the switcher
-    /// across midnight. Without tracking which day was actually loaded,
-    /// reopening after midnight kept showing yesterday's half-typed minutes
-    /// or journal entry, and the next keystroke committed that stale text
-    /// onto today's record instead of yesterday's.
+    /// across midnight, or the user opening the back-fill picker for a
+    /// different date entirely. Without tracking which day was actually
+    /// loaded, either case kept showing the previous day's half-typed
+    /// minutes or journal entry, and the next keystroke committed that stale
+    /// text onto the new record instead of the one it was actually typed for.
     @State private var loadedFor = ""
     @State private var minutesDebouncer = Debouncer()
     @State private var journalDebouncer = Debouncer()
@@ -132,13 +188,13 @@ private struct PracticeRow: View {
     @State private var journalDirty = false
 
     private var state: LogState { store.state }
-    private var log: MindDayRecord { state.mindDay(state.today) }
+    private var log: MindDayRecord { state.mindDay(activeDate) }
 
     var body: some View {
         TickRow(title: practice.name,
                 subtitle: subtitle,
-                isOn: Mind.didPractice(state, practice, on: state.today),
-                toggle: { store.toggleMindPractice(practice, on: state.today) }) {
+                isOn: Mind.didPractice(state, practice, on: activeDate),
+                toggle: { store.toggleMindPractice(practice, on: activeDate) }) {
             switch practice.kind {
             case .minutes:
                 minutesDetail
@@ -147,7 +203,7 @@ private struct PracticeRow: View {
                     .onChange(of: journal) { _, _ in
                         guard loaded else { return }
                         journalDirty = true
-                        let date = state.today
+                        let date = activeDate
                         journalDebouncer.schedule { commitJournal(for: date) }
                     }
             default:
@@ -155,19 +211,19 @@ private struct PracticeRow: View {
             }
         }
         .onAppear(perform: load)
-        .onChange(of: state.today) { old, _ in
+        .onChange(of: activeDate) { old, _ in
             minutesDebouncer.flush { commitMinutes(for: old) }
             journalDebouncer.flush { commitJournal(for: old) }
             load()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase != .active else { return }
-            let date = state.today
+            let date = activeDate
             minutesDebouncer.flush { commitMinutes(for: date) }
             journalDebouncer.flush { commitJournal(for: date) }
         }
         .onDisappear {
-            let date = state.today
+            let date = activeDate
             minutesDebouncer.flush { commitMinutes(for: date) }
             journalDebouncer.flush { commitJournal(for: date) }
         }
@@ -202,7 +258,7 @@ private struct PracticeRow: View {
                     .onChange(of: minutes) { _, _ in
                         guard loaded else { return }
                         minutesDirty = true
-                        let date = state.today
+                        let date = activeDate
                         minutesDebouncer.schedule { commitMinutes(for: date) }
                     }
                 Text("of \(target)")
@@ -235,17 +291,18 @@ private struct PracticeRow: View {
         case .minutes:
             return "\(Mind.target(state, practice) ?? 0) min"
         case .text:
-            return Mind.prompt(state)
+            return Mind.prompt(state, on: activeDate)
         case .drill:
             let drill = Mind.charismaDrill(state)
             return "\(drill.name) — \(drill.how)"
         case .tick:
-            return practice.key == "social" ? MindPlan.socialRep(dow: state.todayDow) : practice.why
+            let dow = DateKit.dow(key: activeDate) ?? state.todayDow
+            return practice.key == "social" ? MindPlan.socialRep(dow: dow) : practice.why
         }
     }
 
     private func load() {
-        let date = state.today
+        let date = activeDate
         guard loadedFor != date else { return }
         loaded = false
         minutes = log.mins[practice.key].map(String.init) ?? ""
@@ -256,13 +313,21 @@ private struct PracticeRow: View {
 }
 
 private struct LadderPanel: View {
+    /// Today, or the Saturday being back-filled.
+    var activeDate: String
+    /// The cap is one global, forward-looking number, not a property of any
+    /// single day — moving it while reviewing a past Saturday would quietly
+    /// change today's target too. So the +/- controls and the "cleared it"
+    /// upsell only show up on today's own ladder; the rungs themselves still
+    /// tick for whichever day is active.
+    var canAdjustCap: Bool
     @Environment(AppStore.self) private var store
     private var state: LogState { store.state }
 
     var body: some View {
         let cap = state.mindLadderCap
         let rungs = Mind.ladderRungs(cap: cap)
-        let done = state.mindDay(state.today).done
+        let done = state.mindDay(activeDate).done
         let doneCount = rungs.indices.filter { done.contains("rung\($0 + 1)") }.count
         let atTop = cap >= MindPlan.ladder.count
 
@@ -275,18 +340,20 @@ private struct LadderPanel: View {
             ForEach(rungs.indices, id: \.self) { index in
                 TickRow(title: "\(index + 1). \(rungs[index])",
                         isOn: done.contains("rung\(index + 1)"),
-                        toggle: { store.toggleMindKey("rung\(index + 1)", on: state.today) })
+                        toggle: { store.toggleMindKey("rung\(index + 1)", on: activeDate) })
             }
-            HStack {
-                ActionButton(title: "– rung", enabled: cap > 1) { store.adjustLadderCap(by: -1) }
-                ActionButton(title: "+ rung", enabled: !atTop) { store.adjustLadderCap(by: 1) }
-                PTag(atTop ? "top of the ladder" : "next: \(MindPlan.ladder[cap])")
-            }
-            if doneCount == rungs.count && !atTop {
+            if canAdjustCap {
                 HStack {
-                    PTag("cleared the whole ladder", tint: Theme.green)
-                    ActionButton(title: "Add rung \(cap + 1)", prominent: true) {
-                        store.adjustLadderCap(by: 1)
+                    ActionButton(title: "– rung", enabled: cap > 1) { store.adjustLadderCap(by: -1) }
+                    ActionButton(title: "+ rung", enabled: !atTop) { store.adjustLadderCap(by: 1) }
+                    PTag(atTop ? "top of the ladder" : "next: \(MindPlan.ladder[cap])")
+                }
+                if doneCount == rungs.count && !atTop {
+                    HStack {
+                        PTag("cleared the whole ladder", tint: Theme.green)
+                        ActionButton(title: "Add rung \(cap + 1)", prominent: true) {
+                            store.adjustLadderCap(by: 1)
+                        }
                     }
                 }
             }
