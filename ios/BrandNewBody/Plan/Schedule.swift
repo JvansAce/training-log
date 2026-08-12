@@ -184,7 +184,14 @@ public enum Plan {
                     // hinge — this is the movement that actually trains it.
                     Exercise(key: "we-legcurl", name: "Leg curl or Nordic", prescription: "3 × 8–12",
                              rir: "0–2", liftID: "legcurl"),
-                    Exercise(key: "we-bss", name: "Bulgarian split squat", prescription: "3 × 10 / leg",
+                    // Deep knee flexion under a rotational bias through the
+                    // rep is the same combination occupational studies link
+                    // to medial meniscus lesions — not a reason to drop the
+                    // exercise, but the front knee's the thing worth
+                    // watching as the set fatigues, specifically for a
+                    // meniscus history.
+                    Exercise(key: "we-bss", name: "Bulgarian split squat",
+                             prescription: "3 × 10 / leg — front knee tracks over the foot, not inward, late in the set",
                              rir: "1–2", liftID: "bss"),
                     Exercise(key: "we-calf", name: "Calf raises", prescription: "3 × 15", rir: "0–2", liftID: "calf"),
                     Exercise(key: "we-hlr", name: "Hanging leg raises",
@@ -252,7 +259,8 @@ public enum Plan {
                     // height drops and the set's own abort rule kicks in too
                     // early to have been worth starting.
                     Exercise(key: "sa-boxjump", name: "Box jumps",
-                             prescription: "4 × 6 explosive, full rest — stop the set if height drops", liftID: "boxjump"),
+                             prescription: "4 × 6 explosive, full rest — stop the set if height drops, land soft and even on both feet",
+                             liftID: "boxjump"),
                     Exercise(key: "sa-fsquat", name: "Front or goblet squat", prescription: "4 × 8",
                              rir: "1–2", liftID: "fsquat", isBarbell: true),
                     // Saturday used to be entirely quad-dominant, which left the
@@ -353,6 +361,18 @@ public enum Plan {
     ///   scapular control transfer to a program with three separate
     ///   pull-up/row days, not the "decompresses the shoulder" claim that
     ///   circulates with it, which no controlled trial has tested directly.
+    /// A fifth item, added afterward: single-leg balance. Not really a
+    /// "mobility" drill at all — a meniscus doesn't get more flexible from
+    /// stretching it, so the four above don't do anything for one. What
+    /// actually helps a partially-healed tear stay resolved is offloading
+    /// (quad strength, already trained twice a week by the squat/RDL/split
+    /// squat) and neuromuscular control — proprioceptive training after
+    /// meniscus surgery has shown real gains in balance, strength and
+    /// function scores versus conventional training alone, and it's the one
+    /// piece nothing else in the week actually trains. Sits here rather than
+    /// as an accessory lift because the useful dose is small and frequent —
+    /// short daily balance work, not an occasional heavy session — which is
+    /// exactly this checklist's format already.
     public static let mobility: [Mobility] = [
         .init(key: "mob-squat", name: "Deep squat hold", prescription: "2 × 1 min"),
         .init(key: "mob-couch", name: "Couch stretch",
@@ -360,17 +380,20 @@ public enum Plan {
         .init(key: "mob-shoulder", name: "Cross-body shoulder stretch",
               prescription: "2 × 30s / side — pull the arm across the chest, controlled, not ballistic"),
         .init(key: "mob-hang", name: "Dead hang", prescription: "2 × 30–45s"),
+        .init(key: "mob-balance", name: "Single-leg balance",
+              prescription: "2 × 30–45s / leg — progress to eyes closed or an uneven surface once it's easy"),
     ]
 
-    /// The drill order as it stood while ticks were positions. **Frozen** in
-    /// length and order — a new drill still goes on the end of `mobility`,
-    /// never inserted here, or every already-recorded tick would translate to
-    /// the wrong drill. Renaming what a position points to (as happened at
-    /// index 2, dislocates → cross-body stretch) is not an insertion and
-    /// stays safe, the same way renaming a lift in `Schedule` doesn't corrupt
-    /// its liftID-keyed history — the position, not the label, is what a
-    /// legacy tick is anchored to. `testMobilityKeysAreStableAndUnique` fails
-    /// if the two drift apart.
+    /// The drill order as it stood while ticks were positions, back when
+    /// there were four. **Frozen** in length and order — a new drill goes on
+    /// the end of `mobility` (as the balance drill did) and is simply absent
+    /// here, never inserted into this list, or every already-recorded tick
+    /// would translate to the wrong drill. Renaming what a position points to
+    /// (as happened at index 2, dislocates → cross-body stretch) is not an
+    /// insertion and stays safe, the same way renaming a lift in `Schedule`
+    /// doesn't corrupt its liftID-keyed history — the position, not the
+    /// label, is what a legacy tick is anchored to.
+    /// `testMobilityKeysAreStableAndUnique` fails if the two drift apart.
     private static let legacyMobilityOrder = [
         "mob-squat", "mob-couch", "mob-shoulder", "mob-hang",
     ]
@@ -380,8 +403,8 @@ public enum Plan {
         legacyMobilityOrder.indices.contains(index) ? legacyMobilityOrder[index] : nil
     }
 
-    /// One extra drill layered on top of the fixed four, chosen by what the
-    /// day itself demands rather than by the calendar:
+    /// One extra drill layered on top of the fixed baseline, chosen by what
+    /// the day itself demands rather than by the calendar:
     /// - Monday is tennis — a rotational sport — so it gets thoracic
     ///   *rotation*. An 8-week multimodal mobility program in competitive
     ///   tennis players measurably increased thoracic mobility and shoulder
@@ -411,8 +434,8 @@ public enum Plan {
     /// bare-minimum single set it shipped with before.
     ///
     /// Additive only, and never touches `mobility` or `legacyMobilityOrder` —
-    /// a day with no case here just runs the same four drills everyone else
-    /// runs.
+    /// a day with no case here just runs the same baseline drills everyone
+    /// else runs.
     public static func mobilityFocus(dow: Int) -> Mobility? {
         switch dow {
         case 1:

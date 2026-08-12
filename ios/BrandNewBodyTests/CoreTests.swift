@@ -945,14 +945,23 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(Plan.mobilityKey(legacyIndex: -1))
     }
 
+    /// The balance drill was added after the original four, on the end —
+    /// pins that it actually landed there and didn't quietly become a sixth
+    /// legacy position.
+    func testBalanceDrillIsPresentAndUnpositioned() {
+        XCTAssertEqual(Plan.mobility.count, 5)
+        XCTAssertTrue(Plan.mobility.map(\.key).contains("mob-balance"))
+        XCTAssertNil(Plan.mobilityKey(legacyIndex: 4))
+    }
+
     /// The day-specific drill has to stay additive: its key can never collide
-    /// with one of the frozen four, or a tick meant for one would toggle the
-    /// other.
+    /// with one of the baseline drills, or a tick meant for one would toggle
+    /// the other.
     func testMobilityFocusKeysDoNotCollideWithTheBaseline() {
         let baseKeys = Set(Plan.mobility.map(\.key))
         for dow in 0...6 {
             guard let focus = Plan.mobilityFocus(dow: dow) else { continue }
-            XCTAssertFalse(baseKeys.contains(focus.key), "dow \(dow) focus key collides with the baseline four")
+            XCTAssertFalse(baseKeys.contains(focus.key), "dow \(dow) focus key collides with the baseline")
         }
     }
 

@@ -1118,9 +1118,9 @@ private struct MobilityPanel: View {
     @State private var collapsed = false
     @State private var collapsedFor = ""
 
-    /// The fixed four plus, on a day whose lifting calls for it, one more —
-    /// see `Plan.mobilityFocus`. Additive, so a day with no focus drill just
-    /// falls back to exactly the four everyone always had.
+    /// The fixed baseline plus, on a day whose lifting calls for it, one
+    /// more — see `Plan.mobilityFocus`. Additive, so a day with no focus
+    /// drill just falls back to exactly the baseline everyone always runs.
     private var drills: [Plan.Mobility] {
         guard let focus = Plan.mobilityFocus(dow: dow) else { return Plan.mobility }
         return Plan.mobility + [focus]
@@ -1136,10 +1136,11 @@ private struct MobilityPanel: View {
     private var isComplete: Bool { doneCount == drills.count }
 
     var body: some View {
-        // Widened from "5–10" once the ankle drill went to 5×30s/side on
-        // squat days — that alone runs ~5 minutes, on top of the baseline
-        // four, so "5–10" quietly stopped being true on Wed/Sat.
-        Panel(title: "Mobility", tag: isComplete ? "all \(doneCount) done" : "daily · 5–12 min") {
+        // Widened again with the balance drill and the ankle drill's
+        // 5×30s/side dose — that one alone runs ~5 minutes on squat days, on
+        // top of a now-five-item baseline, so the old "5–10" and even "5–12"
+        // stopped being true on Wed/Sat specifically.
+        Panel(title: "Mobility", tag: isComplete ? "all \(doneCount) done" : "daily · 8–15 min") {
             if collapsed {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { collapsed = false }
@@ -1165,7 +1166,7 @@ private struct MobilityPanel: View {
             } else {
                 // The last row is the day-specific one whenever there is
                 // one, so it reads as "plus today" rather than being
-                // shuffled in among the fixed four.
+                // shuffled in among the fixed baseline.
                 ForEach(drills) { drill in
                     TickRow(title: drill.name,
                             subtitle: drill.prescription,
@@ -1198,7 +1199,7 @@ private struct MobilityPanel: View {
         .onChange(of: activeDate) { _, _ in syncCollapse() }
     }
 
-    /// Decided on entry, never live — ticking the fourth drill must not make
+    /// Decided on entry, never live — ticking the last drill must not make
     /// the panel fold up under the thumb that just tapped it.
     private func syncCollapse() {
         guard collapsedFor != activeDate else { return }
