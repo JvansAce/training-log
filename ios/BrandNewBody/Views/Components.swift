@@ -17,6 +17,15 @@ struct Panel<Content: View>: View {
     var title: String
     var tag: String?
     var dimmed: Bool = false
+    /// A chevron in the header for a panel that can collapse — present only
+    /// when `onToggleCollapse` is non-nil, so every other call site is
+    /// unaffected. Lives here rather than as a control down inside a panel's
+    /// own content specifically so it sits where you look first: the header,
+    /// visible before scrolling past whatever the panel happens to be
+    /// showing that day, not a text link waiting at the bottom of a list you
+    /// may not want to scroll through just to hide it.
+    var isCollapsed: Bool = false
+    var onToggleCollapse: (() -> Void)? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -28,6 +37,17 @@ struct Panel<Content: View>: View {
                 Spacer(minLength: 8)
                 if let tag {
                     PTag(tag)
+                }
+                if let onToggleCollapse {
+                    Button(action: onToggleCollapse) {
+                        Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Theme.muted)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(isCollapsed ? "Expand" : "Collapse") \(title)")
                 }
             }
             content

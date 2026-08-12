@@ -497,7 +497,9 @@ private struct SessionPanel: View {
     private var isComplete: Bool { !day.items.isEmpty && doneCount == day.items.count }
 
     var body: some View {
-        Panel(title: day.title, tag: tag) {
+        Panel(title: day.title, tag: tag,
+              isCollapsed: collapsed,
+              onToggleCollapse: canEdit ? { withAnimation(.snappy(duration: 0.2)) { collapsed.toggle() } } : nil) {
             Note(day.note)
 
             if showWorkoutBanner, let workouts = whoop.today?.workouts, !workouts.isEmpty {
@@ -529,22 +531,6 @@ private struct SessionPanel: View {
                     ActionButton(title: "Start rest timer · \(RestTimer.format(rest))") {
                         timer.start(seconds: rest)
                     }
-                }
-
-                // Not gated on completion — a session you're not finished
-                // with can still take up more screen than you want it to
-                // right now, e.g. mid-set with the exercise list beneath it
-                // still visible. The wording changes so collapsing early
-                // never reads as marking the session done.
-                if canEdit {
-                    Button {
-                        withAnimation(.snappy(duration: 0.2)) { collapsed = true }
-                    } label: {
-                        Text(isComplete ? "Tidy this away" : "Hide for now")
-                            .font(Theme.mono(10, weight: .bold))
-                            .foregroundStyle(Theme.muted)
-                    }
-                    .buttonStyle(.plain)
                 }
             }
 
