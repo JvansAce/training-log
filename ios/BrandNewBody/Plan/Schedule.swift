@@ -394,12 +394,21 @@ public enum Plan {
     ///   spine rather than the lower back arching to fake it.
     /// - Wednesday and Saturday both squat — ankle dorsiflexion (the
     ///   knee-to-wall drill) is a validated clinical measure that tracks
-    ///   with squat depth and mechanics, though the trials that actually
-    ///   moved someone's range used more volume than one minute a day gets
-    ///   you; treat this as day-relevant, not a guaranteed fix.
+    ///   with squat depth and mechanics. Dosed at 5 × 30s here specifically
+    ///   because that's the protocol the RCT behind this actually used (twice
+    ///   daily for 3 weeks, in that trial) — this gets you one of the two
+    ///   bouts; a second later in the day compounds it, but one is a real
+    ///   dose, not a token gesture.
     /// - Thursday (the plan's own lowest-priority day) and Sunday (which
     ///   already has its own 20-minute mobility block, `su-mob`) get nothing
     ///   extra here.
+    ///
+    /// The two thoracic drills also picked up a second set: the tennis trial
+    /// behind Monday's case combined stretching with actual strengthening and
+    /// myofascial work 4×/week for 8 weeks, which one drill on a checklist
+    /// can't honestly claim to replicate — but it can at least carry the
+    /// volume a single mobility drill would reasonably need, rather than the
+    /// bare-minimum single set it shipped with before.
     ///
     /// Additive only, and never touches `mobility` or `legacyMobilityOrder` —
     /// a day with no case here just runs the same four drills everyone else
@@ -408,13 +417,13 @@ public enum Plan {
         switch dow {
         case 1:
             return .init(key: "mob-tspine-rotation", name: "Thoracic rotation (open book or quadruped)",
-                         prescription: "8–10 / side, slow — follow the top hand with your eyes")
+                         prescription: "2 × 8–10 / side, slow — follow the top hand with your eyes")
         case 2, 5:
             return .init(key: "mob-tspine-extension", name: "Thoracic extension (bench or roller)",
-                         prescription: "8–10 reps, hold 2s at the top")
+                         prescription: "2 × 8–10 reps, hold 2s at the top")
         case 3, 6:
             return .init(key: "mob-ankle", name: "Ankle dorsiflexion (knee-to-wall)",
-                         prescription: "10 / side, drive the knee over the toes")
+                         prescription: "5 × 30s hold / side, knee driving over the toes")
         default:
             return nil
         }

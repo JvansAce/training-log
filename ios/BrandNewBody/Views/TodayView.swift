@@ -1136,7 +1136,10 @@ private struct MobilityPanel: View {
     private var isComplete: Bool { doneCount == drills.count }
 
     var body: some View {
-        Panel(title: "Mobility", tag: isComplete ? "all \(doneCount) done" : "daily · 5–10 min") {
+        // Widened from "5–10" once the ankle drill went to 5×30s/side on
+        // squat days — that alone runs ~5 minutes, on top of the baseline
+        // four, so "5–10" quietly stopped being true on Wed/Sat.
+        Panel(title: "Mobility", tag: isComplete ? "all \(doneCount) done" : "daily · 5–12 min") {
             if collapsed {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { collapsed = false }
