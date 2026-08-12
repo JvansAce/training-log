@@ -346,6 +346,33 @@ public enum Plan {
         legacyMobilityOrder.indices.contains(index) ? legacyMobilityOrder[index] : nil
     }
 
+    /// One extra drill layered on top of the fixed four, chosen by what the
+    /// day's own lifting already loads rather than by the calendar. Tuesday
+    /// and Friday both press overhead — thoracic extension is what lets that
+    /// range come from the spine instead of the lower back arching for it.
+    /// Wednesday and Saturday both squat — ankle dorsiflexion is what lets
+    /// the knee travel over the toe instead of the heel lifting to fake it.
+    /// Monday's warm-up already has rotation built in for tennis, and Sunday
+    /// already carries its own dedicated long-mobility block (`su-mob`), so
+    /// neither gets a second one here. Thursday is the plan's named
+    /// lowest-priority day and stays a plain rest from this too.
+    ///
+    /// Additive only, and never touches `mobility` or `legacyMobilityOrder` —
+    /// a day with no case here just runs the same four drills everyone else
+    /// runs.
+    public static func mobilityFocus(dow: Int) -> Mobility? {
+        switch dow {
+        case 2, 5:
+            return .init(key: "mob-tspine-extension", name: "Thoracic extension (bench or roller)",
+                         prescription: "8–10 reps, hold 2s at the top")
+        case 3, 6:
+            return .init(key: "mob-ankle", name: "Ankle dorsiflexion (knee-to-wall)",
+                         prescription: "10 / side, drive the knee over the toes")
+        default:
+            return nil
+        }
+    }
+
     public struct Meal: Identifiable, Sendable {
         public var id: String { heading }
         public let heading: String

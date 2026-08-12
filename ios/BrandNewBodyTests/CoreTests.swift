@@ -945,6 +945,30 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(Plan.mobilityKey(legacyIndex: -1))
     }
 
+    /// The day-specific drill has to stay additive: its key can never collide
+    /// with one of the frozen four, or a tick meant for one would toggle the
+    /// other.
+    func testMobilityFocusKeysDoNotCollideWithTheBaseline() {
+        let baseKeys = Set(Plan.mobility.map(\.key))
+        for dow in 0...6 {
+            guard let focus = Plan.mobilityFocus(dow: dow) else { continue }
+            XCTAssertFalse(baseKeys.contains(focus.key), "dow \(dow) focus key collides with the baseline four")
+        }
+    }
+
+    /// Pressing days get thoracic extension, squat days get ankle
+    /// dorsiflexion; Monday (tennis, no lifting), Thursday (lowest-priority
+    /// rest) and Sunday (own dedicated long-mobility block) get nothing extra.
+    func testMobilityFocusMatchesEachDaysOwnLifting() {
+        XCTAssertNil(Plan.mobilityFocus(dow: 0))
+        XCTAssertNil(Plan.mobilityFocus(dow: 1))
+        XCTAssertEqual(Plan.mobilityFocus(dow: 2)?.key, "mob-tspine-extension")
+        XCTAssertEqual(Plan.mobilityFocus(dow: 3)?.key, "mob-ankle")
+        XCTAssertNil(Plan.mobilityFocus(dow: 4))
+        XCTAssertEqual(Plan.mobilityFocus(dow: 5)?.key, "mob-tspine-extension")
+        XCTAssertEqual(Plan.mobilityFocus(dow: 6)?.key, "mob-ankle")
+    }
+
     /// A backup exported while mobility ticks were still positions in the drill
     /// list has to keep importing — a restore is the one moment you cannot
     /// afford to throw.

@@ -74,7 +74,7 @@ struct TodayView: View {
         case .fuel:
             FuelPanel(state: state, dow: viewingDow, canEdit: canEdit, activeDate: activeDate)
         case .mobility:
-            MobilityPanel(state: state, canEdit: canEdit, activeDate: activeDate)
+            MobilityPanel(state: state, canEdit: canEdit, activeDate: activeDate, dow: viewingDow)
         }
     }
 
@@ -1110,21 +1110,30 @@ private struct MobilityPanel: View {
     var state: LogState
     var canEdit: Bool
     var activeDate: String
+    var dow: Int
     @Environment(AppStore.self) private var store
 
-    /// Same soft lock as the session panel, and for the same reason: four
-    /// drills that are all ticked are four rows of nothing left to do.
+    /// Same soft lock as the session panel, and for the same reason: rows
+    /// that are all ticked are rows of nothing left to do.
     @State private var collapsed = false
     @State private var collapsedFor = ""
 
-    /// Gated on `canEdit` exactly as the rows are. The drill keys are the same
-    /// every day, so unlike the session panel this can't rely on a different
+    /// The fixed four plus, on a day whose lifting calls for it, one more —
+    /// see `Plan.mobilityFocus`. Additive, so a day with no focus drill just
+    /// falls back to exactly the four everyone always had.
+    private var drills: [Plan.Mobility] {
+        guard let focus = Plan.mobilityFocus(dow: dow) else { return Plan.mobility }
+        return Plan.mobility + [focus]
+    }
+
+    /// Gated on `canEdit` exactly as the rows are. Keyed by drill, not by
+    /// count, so unlike the session panel this can't rely on a different
     /// weekday's keys being absent: previewing Friday on a Tuesday whose
-    /// mobility is done would otherwise collapse to "all 4 done" above rows
+    /// mobility is done would otherwise collapse to "all done" above rows
     /// that render unticked, because that is what a non-editable day shows.
     private var done: Set<String> { canEdit ? state.day(activeDate).mobility : [] }
-    private var doneCount: Int { Plan.mobility.filter { done.contains($0.key) }.count }
-    private var isComplete: Bool { doneCount == Plan.mobility.count }
+    private var doneCount: Int { drills.filter { done.contains($0.key) }.count }
+    private var isComplete: Bool { doneCount == drills.count }
 
     var body: some View {
         Panel(title: "Mobility", tag: isComplete ? "all \(doneCount) done" : "daily · 5–10 min") {
@@ -1136,7 +1145,7 @@ private struct MobilityPanel: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 20))
                             .foregroundStyle(Theme.green)
-                        Text("All \(Plan.mobility.count) drills done")
+                        Text("All \(drills.count) drills done")
                             .font(Theme.body(15, weight: .semibold))
                             .foregroundStyle(Theme.bone)
                         Spacer(minLength: 8)
@@ -1149,14 +1158,20 @@ private struct MobilityPanel: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Mobility complete, all \(Plan.mobility.count) drills done. Activate to edit.")
+                .accessibilityLabel("Mobility complete, all \(drills.count) drills done. Activate to edit.")
             } else {
-                ForEach(Plan.mobility) { drill in
+                // The last row is the day-specific one whenever there is
+                // one, so it reads as "plus today" rather than being
+                // shuffled in among the fixed four.
+                ForEach(drills) { drill in
                     TickRow(title: drill.name,
                             subtitle: drill.prescription,
                             isOn: canEdit && done.contains(drill.key),
                             enabled: canEdit,
                             toggle: { store.toggleMobility(drill.key, on: activeDate) })
+                }
+                if drills.count > Plan.mobility.count {
+                    Note("Today's extra drill targets what the session above already loads — not a general routine, just the one joint this day's lifting leans on hardest.")
                 }
                 if isComplete, canEdit {
                     Button {
