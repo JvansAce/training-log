@@ -84,6 +84,7 @@ final class AppStore {
         next.heightCm = settings.heightCm
         next.birthYear = settings.birthYear
         next.deloadSnooze = settings.deloadSnooze
+        next.kneeCareMode = settings.kneeCareMode
         next.mindStartDate = settings.mindStartDate
         next.mindUnlocked = settings.mindUnlocked
         next.mindTargets = settings.mindTargets
@@ -477,6 +478,7 @@ final class AppStore {
     func setBirthYear(_ year: Int) { mutate { $0.birthYear = year } }
     func setStartDate(_ date: String) { mutate { $0.startDate = date } }
     func setBarKg(_ kg: Double) { mutate { $0.barKg = kg } }
+    func setKneeCareMode(_ on: Bool) { mutate { $0.kneeCareMode = on } }
 
     func adjustCalories(by delta: Int) {
         mutate { $0.calAdjust += delta }
@@ -653,6 +655,7 @@ final class AppStore {
         settings.heightCm = incoming.heightCm
         settings.birthYear = incoming.birthYear
         settings.deloadSnooze = incoming.deloadSnooze
+        settings.kneeCareMode = incoming.kneeCareMode
         settings.mindStartDate = incoming.mindStartDate
         settings.mindUnlocked = incoming.mindUnlocked
         settings.mindTargets = incoming.mindTargets

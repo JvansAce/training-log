@@ -193,6 +193,17 @@ public enum Plan {
                     Exercise(key: "we-bss", name: "Bulgarian split squat",
                              prescription: "3 × 10 / leg — front knee tracks over the foot, not inward, late in the set",
                              rir: "1–2", liftID: "bss"),
+                    // The deep-flexion-under-a-rotational-bias combination the
+                    // comment above warns about, confirmed the hard way — a
+                    // real squat at real load (40 kg) was fine, this specific
+                    // pattern wasn't. Kept in the schedule rather than
+                    // replaced outright, since its history is real; `Knee`
+                    // swaps it out for `we-legpress` when knee-care mode is
+                    // on, and back once it's off — no key or liftID here
+                    // ever changes, so nothing already logged is at risk.
+                    Exercise(key: "we-legpress", name: "Leg press, limited depth",
+                             prescription: "3 × 10 — depth is the progression variable here, not the plate; go a little deeper only after 24h with no next-day reaction",
+                             rir: "1–2", liftID: "legpress"),
                     Exercise(key: "we-calf", name: "Calf raises", prescription: "3 × 15", rir: "0–2", liftID: "calf"),
                     Exercise(key: "we-hlr", name: "Hanging leg raises",
                              prescription: "3 × 12 — add a dumbbell between the feet when 12 is easy",
@@ -261,6 +272,16 @@ public enum Plan {
                     Exercise(key: "sa-boxjump", name: "Box jumps",
                              prescription: "4 × 6 explosive, full rest — stop the set if height drops, land soft and even on both feet",
                              liftID: "boxjump"),
+                    // Plyometric landing is squarely in the avoid list for a
+                    // meniscus issue, and unlike the squat pattern this isn't
+                    // something to test at load and confirm either way —
+                    // kept in the schedule for its own history, same as
+                    // `we-bss` above, and `Knee` swaps it for this whenever
+                    // knee-care mode is on. Heavily loadable and a genuine
+                    // volume replacement, not a consolation exercise — no
+                    // knee flexion depth or rotation involved at all.
+                    Exercise(key: "sa-hipthrust", name: "Hip thrust", prescription: "4 × 8–10",
+                             rir: "1–2", liftID: "hipthrust", isBarbell: true),
                     Exercise(key: "sa-fsquat", name: "Front or goblet squat", prescription: "4 × 8",
                              rir: "1–2", liftID: "fsquat", isBarbell: true),
                     // Saturday used to be entirely quad-dominant, which left the

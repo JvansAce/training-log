@@ -236,6 +236,10 @@ final class AppSettings {
     var heightCm: Int?
     var birthYear: Int?
     var deloadSnooze: String?
+    /// Swaps a small number of specific exercises for knee-friendlier
+    /// versions — see `Knee.swift`. Off by default so nobody's plan changes
+    /// underneath them until they turn it on.
+    var kneeCareMode: Bool = false
 
     var mindStartDate: String?
     var mindUnlocked: Int = 1

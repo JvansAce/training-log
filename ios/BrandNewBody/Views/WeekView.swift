@@ -112,6 +112,10 @@ private struct DayRow: View {
 
     private var day: TrainingDay { Plan.day(dow) }
     private var isToday: Bool { dow == state.todayDow }
+    /// Same filter Today applies — otherwise a knee-care substitution shows
+    /// up here as two items instead of one, since both sides are real,
+    /// permanent entries in `Plan.schedule`. See `Knee.swift`.
+    private var items: [Exercise] { Knee.adjustedItems(day.items, kneeCareMode: state.kneeCareMode) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -126,9 +130,9 @@ private struct DayRow: View {
                 Spacer(minLength: 8)
                 PTag(day.tag)
             }
-            Reveal(title: "\(day.items.count) item\(day.items.count == 1 ? "" : "s")", startsOpen: isToday) {
+            Reveal(title: "\(items.count) item\(items.count == 1 ? "" : "s")", startsOpen: isToday) {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(day.items) { item in
+                    ForEach(items) { item in
                         let isPyramid = item.key == "sa-pyramid"
                         Text((isPyramid ? Pyramid.itemName(state) : item.displayName(state)) +
                              (item.prescription.isEmpty && !isPyramid ? "" :

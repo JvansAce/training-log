@@ -26,6 +26,7 @@ struct SetupView: View {
             iCloudSection
             whoopSection
             todayLayoutSection
+            kneeCareSection
             backupSection
             youSection
             startDateSection
@@ -149,6 +150,27 @@ struct SetupView: View {
             Text("""
                 Move Vitals, the session, Fuel and Mobility into whatever order you actually use — \
                 mobility first if that's your habit, fuel last if you never check it.
+                """)
+        }
+    }
+
+    // MARK: Knee care
+
+    private var kneeCareSection: some View {
+        Section {
+            Toggle("Knee care mode", isOn: Binding(
+                get: { state.kneeCareMode },
+                set: { store.setKneeCareMode($0) }
+            ))
+        } header: {
+            Text("Training")
+        } footer: {
+            Text("""
+                Swaps two specific exercises for knee-friendlier versions — Bulgarian split squat → leg \
+                press (limited depth) on Wednesday, box jumps → hip thrust on Saturday. Nothing else \
+                changes: the main squat is left alone on purpose, since a real test at real load is what \
+                should decide that, not a toggle. Flip this off the moment it's not needed — either \
+                exercise's own history stays exactly where it was, on or off.
                 """)
         }
     }

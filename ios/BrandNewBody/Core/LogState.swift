@@ -182,6 +182,9 @@ public struct LogState: Codable, Hashable, Sendable {
     public var heightCm: Int?
     public var birthYear: Int?
     public var deloadSnooze: String?
+    /// Swaps a small number of specific exercises for knee-friendlier
+    /// versions — see `Knee.swift`.
+    public var kneeCareMode: Bool = false
 
     // MARK: Body collections
 
@@ -219,7 +222,7 @@ public struct LogState: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion, startDate, pyramidCap, vestKg, vestPhase, barKg, calAdjust,
-             heightCm, birthYear, deloadSnooze,
+             heightCm, birthYear, deloadSnooze, kneeCareMode,
              weights, waist, logs, lifts, pyramidLog, deloadLog, off, recovery,
              mindStartDate, mindUnlocked, mindLogs, mindTargets, mindLadderLog, mindLadderCap,
              charismaIx, charismaSince,
@@ -250,6 +253,7 @@ public struct LogState: Codable, Hashable, Sendable {
         heightCm = try c.decodeIfPresent(Int.self, forKey: .heightCm)
         birthYear = try c.decodeIfPresent(Int.self, forKey: .birthYear)
         deloadSnooze = try c.decodeIfPresent(String.self, forKey: .deloadSnooze)
+        kneeCareMode = try c.decodeIfPresent(Bool.self, forKey: .kneeCareMode) ?? false
 
         weights = try c.decodeIfPresent([WeightRecord].self, forKey: .weights) ?? []
         waist = try c.decodeIfPresent([WaistRecord].self, forKey: .waist) ?? []

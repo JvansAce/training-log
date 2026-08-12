@@ -1084,6 +1084,44 @@ final class CoreTests: XCTestCase {
                            .filter { $0.value.count > 1 }.keys.joined(separator: ", "))
     }
 
+    /// Off, the original exercise shows and its replacement doesn't. On, the
+    /// replacement takes over and the original steps aside — a swap, not an
+    /// addition, so the count doesn't change either way.
+    func testKneeAdjustedItemsSwapsOnlyTheFlaggedPair() {
+        let wednesday = Plan.day(3).items
+        let off = Knee.adjustedItems(wednesday, kneeCareMode: false)
+        XCTAssertTrue(off.map(\.key).contains("we-bss"))
+        XCTAssertFalse(off.map(\.key).contains("we-legpress"))
+        XCTAssertEqual(off.count, wednesday.count - 1)
+
+        let on = Knee.adjustedItems(wednesday, kneeCareMode: true)
+        XCTAssertFalse(on.map(\.key).contains("we-bss"))
+        XCTAssertTrue(on.map(\.key).contains("we-legpress"))
+        XCTAssertEqual(on.count, wednesday.count - 1)
+    }
+
+    /// The same swap, on Saturday's pair — box jumps for hip thrust.
+    func testKneeAdjustedItemsCoversSaturdayToo() {
+        let saturday = Plan.day(6).items
+        let on = Knee.adjustedItems(saturday, kneeCareMode: true)
+        XCTAssertFalse(on.map(\.key).contains("sa-boxjump"))
+        XCTAssertTrue(on.map(\.key).contains("sa-hipthrust"))
+
+        let off = Knee.adjustedItems(saturday, kneeCareMode: false)
+        XCTAssertTrue(off.map(\.key).contains("sa-boxjump"))
+        XCTAssertFalse(off.map(\.key).contains("sa-hipthrust"))
+    }
+
+    /// Both sides of a substitution are real, permanent `Plan.schedule`
+    /// entries, not something fabricated at render time — which is what lets
+    /// either one's logged history survive toggling the mode off and on.
+    func testKneeSubstitutionsAreRegisteredRealLifts() {
+        for id in ["bss", "legpress", "boxjump", "hipthrust"] {
+            XCTAssertTrue(Plan.liftIDs.contains(id), "\(id) missing from Plan.liftIDs")
+            XCTAssertNotNil(Plan.liftNames[id], "no name for \(id)")
+        }
+    }
+
     /// The round-trip the backup file depends on.
     func testLogStateSurvivesAJSONRoundTrip() throws {
         var state = makeState()
@@ -1112,6 +1150,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(state.barKg, 20)
         XCTAssertEqual(state.mindUnlocked, 1)
         XCTAssertEqual(state.mindLadderCap, 1)
+        XCTAssertFalse(state.kneeCareMode)
         XCTAssertTrue(state.weights.isEmpty)
         XCTAssertTrue(state.logs.isEmpty)
         XCTAssertTrue(state.lifts.isEmpty)

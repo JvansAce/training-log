@@ -120,7 +120,10 @@ private struct TodayHero: View {
     var viewing: Int
     var onSelect: (Int) -> Void
 
-    private var todayItems: [Exercise] { Plan.day(state.todayDow).items }
+    /// Filtered the same way Today's own panel is — otherwise the hidden
+    /// side of a knee-care substitution sits in this count forever unticked,
+    /// and "done today" can never reach its own total. See `Knee.swift`.
+    private var todayItems: [Exercise] { Knee.adjustedItems(Plan.day(state.todayDow).items, kneeCareMode: state.kneeCareMode) }
     private var doneCount: Int { min(state.day(state.today).done.count, todayItems.count) }
     private var totalCount: Int { todayItems.count }
     private var fraction: Double { totalCount > 0 ? Double(doneCount) / Double(totalCount) : 0 }
@@ -489,12 +492,18 @@ private struct SessionPanel: View {
     private var day: TrainingDay { Plan.day(dow) }
     private var log: DayRecord { state.day(activeDate) }
 
+    /// `day.items`, minus whichever side of a knee-care substitution isn't
+    /// currently shown — see `Knee.swift`. This is what's actually rendered
+    /// and counted; `day.items` itself stays the full, permanent list so
+    /// `Plan.liftIDs` and history are unaffected by the toggle either way.
+    private var displayedItems: [Exercise] { Knee.adjustedItems(day.items, kneeCareMode: state.kneeCareMode) }
+
     /// Counted over *this* day's own keys, never `log.done.count`. A Tuesday
     /// with eight ticks previewing Friday's six items would otherwise read as
     /// complete, because the count would be comparing today's tally against a
     /// different day's list.
-    private var doneCount: Int { day.items.filter { log.done.contains($0.key) }.count }
-    private var isComplete: Bool { !day.items.isEmpty && doneCount == day.items.count }
+    private var doneCount: Int { displayedItems.filter { log.done.contains($0.key) }.count }
+    private var isComplete: Bool { !displayedItems.isEmpty && doneCount == displayedItems.count }
 
     var body: some View {
         Panel(title: day.title, tag: tag,
@@ -509,7 +518,7 @@ private struct SessionPanel: View {
             if collapsed {
                 collapsedSummary
             } else {
-                ForEach(day.items) { item in
+                ForEach(displayedItems) { item in
                     let isPyramid = item.key == "sa-pyramid"
                     TickRow(
                         title: isPyramid ? Pyramid.itemName(state, on: activeDate) : item.displayName(state),
@@ -595,7 +604,7 @@ private struct SessionPanel: View {
                     .font(.system(size: 20))
                     .foregroundStyle(isComplete ? Theme.green : Theme.muted)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(isComplete ? "All \(day.items.count) ticked" : "\(doneCount) of \(day.items.count) ticked")
+                    Text(isComplete ? "All \(displayedItems.count) ticked" : "\(doneCount) of \(displayedItems.count) ticked")
                         .font(Theme.body(15, weight: .semibold))
                         .foregroundStyle(Theme.bone)
                     Text("logged sets and notes are kept")
@@ -613,8 +622,8 @@ private struct SessionPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isComplete
-            ? "Session complete, all \(day.items.count) items ticked. Activate to edit."
-            : "Session hidden, \(doneCount) of \(day.items.count) items ticked. Activate to edit.")
+            ? "Session complete, all \(displayedItems.count) items ticked. Activate to edit."
+            : "Session hidden, \(doneCount) of \(displayedItems.count) items ticked. Activate to edit.")
     }
 
     /// Collapsed state is decided when the day is opened, never live off
@@ -651,7 +660,7 @@ private struct SessionPanel: View {
         // Explicit tap rather than auto-ticking on detection, matching the
         // web app's reasoning exactly: WHOOP knows you trained, it doesn't
         // know which items on the checklist you actually did.
-        for item in day.items where !log.done.contains(item.key) {
+        for item in displayedItems where !log.done.contains(item.key) {
             store.toggleItem(item.key, on: activeDate)
         }
     }
