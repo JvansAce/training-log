@@ -137,21 +137,38 @@ struct RootView: View {
     /// buttons did — as a toolbar item now, because that's where a
     /// same-screen mode switch belongs, not stacked above the content like
     /// another block of the page.
+    ///
+    /// On iOS 26, a plain `ToolbarItem` also gets its own automatic Liquid
+    /// Glass background capsule — and the segmented picker's own style is
+    /// *also* a capsule now, not the old rounded rectangle, with no way to
+    /// opt out of that shape. Without `sharedBackgroundVisibility(.hidden)`
+    /// the two stack: the toolbar's glass pill drawn around the picker's own
+    /// glass pill, which is the doubled/overlapping-shape look this was
+    /// reported as. Gated on availability since the deployment target is
+    /// iOS 17 — older OSes never had the extra background to begin with, so
+    /// they're unaffected either way.
     @ToolbarContentBuilder
     private func programmeToolbar(for tab: Tab) -> some ToolbarContent {
         if tab != .setup {
-            ToolbarItem(placement: .topBarTrailing) {
-                Picker("Programme", selection: Binding(
-                    get: { programme },
-                    set: { programme = $0 }
-                )) {
-                    ForEach(Programme.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
+            if #available(iOS 26.0, *) {
+                ToolbarItem(placement: .topBarTrailing) { programmePicker }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarTrailing) { programmePicker }
             }
         }
+    }
+
+    private var programmePicker: some View {
+        Picker("Programme", selection: Binding(
+            get: { programme },
+            set: { programme = $0 }
+        )) {
+            ForEach(Programme.allCases) { option in
+                Text(option.title).tag(option)
+            }
+        }
+        .pickerStyle(.segmented)
+        .fixedSize()
     }
 }
