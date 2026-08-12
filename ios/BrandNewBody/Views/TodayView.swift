@@ -505,7 +505,7 @@ private struct SessionPanel: View {
             }
 
             if collapsed {
-                completedSummary
+                collapsedSummary
             } else {
                 ForEach(day.items) { item in
                     let isPyramid = item.key == "sa-pyramid"
@@ -531,13 +531,16 @@ private struct SessionPanel: View {
                     }
                 }
 
-                // Offered only once it's all ticked, so it never reads as a way
-                // to hide work still to do.
-                if isComplete, canEdit {
+                // Not gated on completion — a session you're not finished
+                // with can still take up more screen than you want it to
+                // right now, e.g. mid-set with the exercise list beneath it
+                // still visible. The wording changes so collapsing early
+                // never reads as marking the session done.
+                if canEdit {
                     Button {
                         withAnimation(.snappy(duration: 0.2)) { collapsed = true }
                     } label: {
-                        Text("Tidy this away")
+                        Text(isComplete ? "Tidy this away" : "Hide for now")
                             .font(Theme.mono(10, weight: .bold))
                             .foregroundStyle(Theme.muted)
                     }
@@ -591,20 +594,22 @@ private struct SessionPanel: View {
     }
 
     /// The soft lock. Nothing is disabled and nothing is hidden that can't be
-    /// got back in one tap — a finished session simply stops occupying the
-    /// screen it was occupying while you were still working through it. The
-    /// row is the tap target, and it says "edit" rather than showing a lock,
-    /// because that is what tapping it does.
-    private var completedSummary: some View {
+    /// got back in one tap — a session, finished or not, simply stops
+    /// occupying the screen it was occupying. The row is the tap target, and
+    /// it says "edit" rather than showing a lock, because that is what
+    /// tapping it does. Reads differently depending on why it's collapsed:
+    /// a green check for one that's actually done, a plain count for one
+    /// that was just tucked away mid-session.
+    private var collapsedSummary: some View {
         Button {
             withAnimation(.snappy(duration: 0.2)) { collapsed = false }
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: "checkmark.circle.fill")
+                Image(systemName: isComplete ? "checkmark.circle.fill" : "chevron.down.circle")
                     .font(.system(size: 20))
-                    .foregroundStyle(Theme.green)
+                    .foregroundStyle(isComplete ? Theme.green : Theme.muted)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("All \(day.items.count) ticked")
+                    Text(isComplete ? "All \(day.items.count) ticked" : "\(doneCount) of \(day.items.count) ticked")
                         .font(Theme.body(15, weight: .semibold))
                         .foregroundStyle(Theme.bone)
                     Text("logged sets and notes are kept")
@@ -621,7 +626,9 @@ private struct SessionPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Session complete, all \(day.items.count) items ticked. Activate to edit.")
+        .accessibilityLabel(isComplete
+            ? "Session complete, all \(day.items.count) items ticked. Activate to edit."
+            : "Session hidden, \(doneCount) of \(day.items.count) items ticked. Activate to edit.")
     }
 
     /// Collapsed state is decided when the day is opened, never live off
