@@ -763,49 +763,111 @@ private struct ActiveWorkoutView: View {
     @Environment(RestTimer.self) private var timer
     @Environment(\.dismiss) private var dismiss
 
+    /// Set once, by `finish()` — nil means the session itself; non-nil
+    /// swaps the whole screen for the PR summary rather than dismissing
+    /// straight to Today, so a record set in the last minute of a workout
+    /// isn't buried under the checklist the moment you're done.
+    @State private var sessionPRs: [NewRecord]?
+
     private var log: DayRecord { state.day(activeDate) }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ForEach(items) { item in
-                        exerciseCard(item)
+            if let sessionPRs {
+                prSummary(sessionPRs)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(items) { item in
+                            exerciseCard(item)
+                        }
+                        if day.dow == 6 {
+                            PyramidPanel(state: state)
+                                .padding(14)
+                                .background(Theme.slate, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        Note("Every set here saves the moment you type it — Finish just ticks off whatever's left and takes you back to today.")
+                            .padding(.top, 2)
                     }
-                    if day.dow == 6 {
-                        PyramidPanel(state: state)
-                            .padding(14)
-                            .background(Theme.slate, in: RoundedRectangle(cornerRadius: 14))
+                    .padding(16)
+                }
+                .background(Theme.ink)
+                .safeAreaInset(edge: .bottom) {
+                    if timer.isRunning { RestTimerBar() }
+                }
+                .animation(.snappy(duration: 0.2), value: timer.isRunning)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Close") { dismiss() }
+                            .tint(Theme.muted)
                     }
-                    Note("Every set here saves the moment you type it — Finish just ticks off whatever's left and takes you back to today.")
-                        .padding(.top, 2)
-                }
-                .padding(16)
-            }
-            .background(Theme.ink)
-            .safeAreaInset(edge: .bottom) {
-                if timer.isRunning { RestTimerBar() }
-            }
-            .animation(.snappy(duration: 0.2), value: timer.isRunning)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
-                        .tint(Theme.muted)
-                }
-                ToolbarItem(placement: .principal) {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(Self.elapsed(from: startedAt, to: context.date))
-                            .font(Theme.mono(16, weight: .bold))
-                            .foregroundStyle(Theme.bone)
-                            .monospacedDigit()
+                    ToolbarItem(placement: .principal) {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(Self.elapsed(from: startedAt, to: context.date))
+                                .font(Theme.mono(16, weight: .bold))
+                                .foregroundStyle(Theme.bone)
+                                .monospacedDigit()
+                        }
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Finish") { finish() }
-                        .font(Theme.body(15, weight: .bold))
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Finish") { finish() }
+                            .font(Theme.body(15, weight: .bold))
+                    }
                 }
             }
         }
+    }
+
+    /// One line per lift: today's history-beating set can't have a story
+    /// simpler than the number it beat, so the previous best rides along
+    /// struck through rather than the new one standing alone.
+    private struct NewRecord: Identifiable {
+        var id: String
+        var name: String
+        var improvement: Lifts.RecordImprovement
+    }
+
+    private func prSummary(_ records: [NewRecord]) -> some View {
+        VStack(spacing: 22) {
+            Spacer()
+            Image(systemName: "trophy.fill")
+                .font(.system(size: 42))
+                .foregroundStyle(Theme.amber)
+            Text(records.count == 1 ? "New PR" : "\(records.count) new PRs")
+                .font(Theme.display(30))
+                .foregroundStyle(Theme.bone)
+            VStack(spacing: 10) {
+                ForEach(records) { record in
+                    VStack(spacing: 4) {
+                        Text(record.name)
+                            .font(Theme.body(15, weight: .bold))
+                            .foregroundStyle(Theme.bone)
+                        HStack(spacing: 8) {
+                            Text(Lifts.describe(record.improvement.previous))
+                                .font(Theme.mono(12))
+                                .foregroundStyle(Theme.muted)
+                                .strikethrough(color: Theme.muted)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Theme.muted)
+                            Text(Lifts.describe(record.improvement.new))
+                                .font(Theme.mono(14, weight: .bold))
+                                .foregroundStyle(Theme.green)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Theme.slate, in: RoundedRectangle(cornerRadius: 14))
+                }
+            }
+            .padding(.horizontal, 20)
+            Spacer()
+            ActionButton(title: "Nice", prominent: true) { dismiss() }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.ink)
     }
 
     private func exerciseCard(_ item: Exercise) -> some View {
@@ -862,7 +924,21 @@ private struct ActiveWorkoutView: View {
         for item in items where !log.done.contains(item.key) {
             store.toggleItem(item.key, on: activeDate)
         }
-        dismiss()
+        let records = newRecords()
+        guard !records.isEmpty else { dismiss(); return }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        sessionPRs = records
+    }
+
+    /// Every lift trained today that just beat its own history — see
+    /// `Lifts.newRecord`. Skips anything with no `liftID` (a warm-up, the
+    /// pyramid line) the same way the set-input fields already do.
+    private func newRecords() -> [NewRecord] {
+        items.compactMap { item -> NewRecord? in
+            guard let liftID = item.liftID, liftID != "pyramid" else { return nil }
+            guard let improvement = Lifts.newRecord(state.liftHistory(liftID), on: activeDate) else { return nil }
+            return NewRecord(id: liftID, name: item.displayName(state), improvement: improvement)
+        }
     }
 
     private static func elapsed(from start: Date, to now: Date) -> String {

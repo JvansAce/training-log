@@ -68,6 +68,28 @@ public enum Lifts {
         e1rm(bestSet(record))
     }
 
+    /// A genuine new best, both sides of it.
+    public struct RecordImprovement: Equatable, Sendable {
+        public var new: LiftSet
+        public var previous: LiftSet
+    }
+
+    /// Whether the set logged on `date` beats every set this lift has ever
+    /// logged on any *other* date — not just the session before it, the way
+    /// `reference`'s "▲ beaten" does, and not a tie with an old best either.
+    /// A lift with no prior history returns nil rather than crowning its
+    /// first-ever entry a record: `reference` already calls that one "first
+    /// entry — this becomes your benchmark", and a PR announcement needs
+    /// something to have actually been beaten.
+    public static func newRecord(_ history: [LiftRecord], on date: String) -> RecordImprovement? {
+        guard let mine = history.first(where: { $0.date == date }), let mineBest = bestSet(mine) else { return nil }
+        let priorBests = history.filter { $0.date != date }.compactMap { bestSet($0) }
+        guard !priorBests.isEmpty else { return nil }
+        let priorBest = priorBests.reduce(priorBests[0]) { beats($1, $0) ? $1 : $0 }
+        guard beats(mineBest, priorBest) else { return nil }
+        return RecordImprovement(new: mineBest, previous: priorBest)
+    }
+
     // MARK: - Prescription parsing
 
     public struct Scheme: Equatable, Sendable {

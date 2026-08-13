@@ -364,6 +364,30 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(Lifts.stall(history))
     }
 
+    /// A true PR beats every past session, not just the one before it —
+    /// a lift that dipped last week and only recovers to an old high today
+    /// must not read as a new record.
+    func testNewRecordBeatsTheAllTimeBestNotJustLastSession() {
+        let history = [
+            LiftRecord(date: DateKit.adding(-14, to: today), sets: [LiftSet(kg: 100, reps: 5)]),
+            LiftRecord(date: DateKit.adding(-7, to: today), sets: [LiftSet(kg: 90, reps: 5)]),
+            LiftRecord(date: today, sets: [LiftSet(kg: 100, reps: 5)]),
+        ]
+        XCTAssertNil(Lifts.newRecord(history, on: today), "ties an old best, doesn't beat it")
+
+        let beaten = history.dropLast() + [LiftRecord(date: today, sets: [LiftSet(kg: 102.5, reps: 5)])]
+        let record = Lifts.newRecord(beaten, on: today)
+        XCTAssertEqual(record?.new.kg, 102.5)
+        XCTAssertEqual(record?.previous.kg, 100)
+    }
+
+    /// A first-ever entry has nothing behind it to beat, so it's a
+    /// benchmark, not a PR — `reference` already has its own line for that.
+    func testNoNewRecordOnAFirstEntry() {
+        let history = [LiftRecord(date: today, sets: [LiftSet(kg: 60, reps: 10)])]
+        XCTAssertNil(Lifts.newRecord(history, on: today))
+    }
+
     // MARK: - Assisted lifts
 
     /// A pull-up or a dip starts at your own bodyweight, so the only way to
