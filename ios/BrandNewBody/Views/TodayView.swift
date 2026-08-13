@@ -488,9 +488,21 @@ private struct SessionPanel: View {
     @State private var collapsedFor = ""
     /// Transient — just long enough to confirm the copy landed.
     @State private var copiedExport = false
+    /// Drives the full-screen active session — see `ActiveWorkoutView`.
+    @State private var showActiveWorkout = false
+    /// Stamped fresh each time Start is tapped, not once per panel — this
+    /// view can live on screen for hours without the session ever opening.
+    @State private var workoutStartedAt = Date()
 
     private var day: TrainingDay { Plan.day(dow) }
     private var log: DayRecord { state.day(activeDate) }
+
+    /// A day with a rest interval is a lifting day — Tennis, cardio and the
+    /// full-rest day all leave it `nil` because there's nothing to rest
+    /// between. That's exactly the split "workouts only" means here: the
+    /// Start button and its full-screen session are for a day with sets to
+    /// log, not a tick-and-go checklist.
+    private var isWorkoutDay: Bool { day.restSeconds != nil }
 
     /// `day.items`, minus whichever side of a knee-care substitution isn't
     /// currently shown — see `Knee.swift`. This is what's actually rendered
@@ -509,6 +521,10 @@ private struct SessionPanel: View {
         Panel(title: day.title, tag: tag,
               isCollapsed: collapsed,
               onToggleCollapse: canEdit ? { withAnimation(.snappy(duration: 0.2)) { collapsed.toggle() } } : nil) {
+            if isWorkoutDay && canEdit {
+                startWorkoutButton
+            }
+
             Note(day.note)
 
             if showWorkoutBanner, let workouts = whoop.today?.workouts, !workouts.isEmpty {
@@ -586,6 +602,32 @@ private struct SessionPanel: View {
             if phase != .active { debouncer.flush { flushNote(for: activeDate) } }
         }
         .onDisappear { debouncer.flush { flushNote(for: activeDate) } }
+        .fullScreenCover(isPresented: $showActiveWorkout) {
+            ActiveWorkoutView(state: state, day: day, activeDate: activeDate,
+                               items: displayedItems, startedAt: workoutStartedAt)
+        }
+    }
+
+    /// The big, hard-to-miss way into a lifting day — sitting above the
+    /// checklist rather than inside `Reveal`-style chrome, because this is
+    /// meant to be the thing your thumb finds first at the rack, not a
+    /// second-tier option next to Copy for WHOOP.
+    private var startWorkoutButton: some View {
+        Button {
+            workoutStartedAt = Date()
+            showActiveWorkout = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "play.fill").font(.system(size: 13, weight: .bold))
+                Text(isComplete ? "Review workout" : "Start workout")
+                    .font(Theme.body(14.5, weight: .bold))
+            }
+            .frame(maxWidth: .infinity)
+            .foregroundStyle(Theme.bone)
+            .padding(.vertical, 13)
+            .background(Theme.red, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
     }
 
     /// The soft lock. Nothing is disabled and nothing is hidden that can't be
@@ -626,15 +668,17 @@ private struct SessionPanel: View {
             : "Session hidden, \(doneCount) of \(displayedItems.count) items ticked. Activate to edit.")
     }
 
-    /// Collapsed state is decided when the day is opened, never live off
-    /// `isComplete`. Ticking the last box mid-session must not fold the
-    /// checklist away underneath you — the sets for that last exercise are
-    /// usually typed *after* its box goes green. So finishing a session leaves
-    /// it open, and it is tidy the next time you come back to it.
+    /// Collapsed on open, every time, regardless of `isComplete` — the Start
+    /// button is the front door now, and a checklist sitting open under it
+    /// on every visit was exactly the wall of chrome that button exists to
+    /// skip. Still decided once per date rather than tracked live: ticking
+    /// the last box mid-session (from the plain checklist below, or after
+    /// backing out of the active session) must not fold things away
+    /// underneath a thumb that's still typing a set.
     private func syncCollapse() {
         guard collapsedFor != activeDate else { return }
         collapsedFor = activeDate
-        collapsed = isComplete
+        collapsed = true
     }
 
     private func workoutBanner(_ workouts: [DetectedWorkout]) -> some View {
@@ -691,6 +735,140 @@ private struct SessionPanel: View {
         // that appending to it would wrap the panel header.
         if canEdit { return isComplete ? "today · complete" : "today · \(day.tag)" }
         return "\(day.label) · preview"
+    }
+}
+
+// MARK: - Active workout
+
+/// The Hevy-style full-screen session: one running clock for the whole
+/// thing, one card per exercise with its own set table, and a single
+/// Finish that ticks off whatever's left before handing you back to a
+/// collapsed panel. Every field on a card is the exact same `LiftRow` the
+/// plain checklist already uses — this changes how logging a set *feels*
+/// at the rack, not how a set gets saved, so nothing about debounced writes
+/// or history continuity had to be touched to build it.
+///
+/// `startedAt` is stamped by the Start button, not on `onAppear` here — the
+/// cover can be dismissed and reopened (backing out to check something on
+/// Progress, say) without the clock restarting, as long as the session
+/// itself hasn't been re-started from the panel.
+private struct ActiveWorkoutView: View {
+    var state: LogState
+    var day: TrainingDay
+    var activeDate: String
+    var items: [Exercise]
+    var startedAt: Date
+
+    @Environment(AppStore.self) private var store
+    @Environment(RestTimer.self) private var timer
+    @Environment(\.dismiss) private var dismiss
+
+    private var log: DayRecord { state.day(activeDate) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(items) { item in
+                        exerciseCard(item)
+                    }
+                    if day.dow == 6 {
+                        PyramidPanel(state: state)
+                            .padding(14)
+                            .background(Theme.slate, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    Note("Every set here saves the moment you type it — Finish just ticks off whatever's left and takes you back to today.")
+                        .padding(.top, 2)
+                }
+                .padding(16)
+            }
+            .background(Theme.ink)
+            .safeAreaInset(edge: .bottom) {
+                if timer.isRunning { RestTimerBar() }
+            }
+            .animation(.snappy(duration: 0.2), value: timer.isRunning)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { dismiss() }
+                        .tint(Theme.muted)
+                }
+                ToolbarItem(placement: .principal) {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(Self.elapsed(from: startedAt, to: context.date))
+                            .font(Theme.mono(16, weight: .bold))
+                            .foregroundStyle(Theme.bone)
+                            .monospacedDigit()
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Finish") { finish() }
+                        .font(Theme.body(15, weight: .bold))
+                }
+            }
+        }
+    }
+
+    private func exerciseCard(_ item: Exercise) -> some View {
+        let isPyramid = item.key == "sa-pyramid"
+        let isDone = log.done.contains(item.key)
+        return VStack(alignment: .leading, spacing: 10) {
+            Button {
+                let turningOn = !isDone
+                store.toggleItem(item.key, on: activeDate)
+                // The closest this app comes to Hevy's per-set auto-rest:
+                // tick the exercise done and the clock for the next one
+                // starts without a second tap. Per-set would need its own
+                // persisted state this app doesn't have — rest is prescribed
+                // per day, not per set, everywhere else in the plan too.
+                if turningOn, let rest = day.restSeconds {
+                    timer.start(seconds: rest)
+                }
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    Checkbox(isOn: isDone)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(isPyramid ? Pyramid.itemName(state, on: activeDate) : item.displayName(state))
+                            .font(Theme.body(16, weight: .bold))
+                            .foregroundStyle(Theme.bone)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            let subtitle = isPyramid ? Pyramid.itemPrescription : item.prescription
+                            if !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(Theme.body(12.5))
+                                    .foregroundStyle(Theme.muted)
+                            }
+                            if let rir = item.rir {
+                                Text("\(rir) RIR").font(Theme.mono(9.5)).foregroundStyle(Theme.amber)
+                            }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(isDone ? [.isSelected] : [])
+
+            if let liftID = item.liftID, liftID != "pyramid" {
+                LiftRow(liftID: liftID, item: item, canEdit: true, activeDate: activeDate)
+                    .padding(.leading, 34)
+            }
+        }
+        .padding(14)
+        .background(Theme.slate, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func finish() {
+        for item in items where !log.done.contains(item.key) {
+            store.toggleItem(item.key, on: activeDate)
+        }
+        dismiss()
+    }
+
+    private static func elapsed(from start: Date, to now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(start)))
+        let h = seconds / 3600, m = (seconds % 3600) / 60, s = seconds % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 }
 
