@@ -240,7 +240,18 @@ public enum Plan {
                     Exercise(key: "fr-pullup", name: "Pull-ups",
                              prescription: "3 × max reps — first two @ 1–2 RIR, third set to failure",
                              liftID: "pullup", isBodyweight: true),
-                    Exercise(key: "fr-flat", name: "Flat DB press", prescription: "4 × 10–12", rir: "1–2", liftID: "flat"),
+                    // Same reasoning as Tuesday's incline: deliberately keeps
+                    // the `flat` liftID rather than a new one, and deliberately
+                    // doesn't flag `isBarbell` — this lift's whole logged
+                    // history is per-dumbbell, and asserting barbell-only now
+                    // would have the plate maths read an old 20 kg DB entry as
+                    // a 20 kg bar total, spiking e1RM off a implement switch
+                    // rather than a real PR. The prescription says so instead,
+                    // same as incline — switching implement is a choice to
+                    // make knowingly, not one a rename makes for you.
+                    Exercise(key: "fr-flat", name: "Barbell bench press",
+                             prescription: "4 × 10–12 — switching from dumbbells means the numbers stop being directly comparable to old sessions",
+                             rir: "1–2", liftID: "flat"),
                     Exercise(key: "fr-crow", name: "Cable or band row", prescription: "3 × 12", rir: "1–2", liftID: "crow"),
                     // See the note on Tuesday's lateral raises: 4 to 5 here,
                     // 3 to 4 there, side delts from 7 a week to 9.
