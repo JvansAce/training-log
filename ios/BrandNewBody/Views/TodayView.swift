@@ -527,7 +527,14 @@ private struct SessionPanel: View {
     var body: some View {
         Panel(title: day.title, tag: tag,
               isCollapsed: collapsed,
-              onToggleCollapse: canEdit ? { withAnimation(.snappy(duration: 0.2)) { collapsed.toggle() } } : nil) {
+              // Not gated on `canEdit`: collapsing is a display choice, not
+              // an edit, and gating it here is what left a previewed day
+              // stuck open. `collapsedSummary`'s own tap-to-expand was never
+              // gated either — previewing a different weekday starts
+              // collapsed same as today now, and only this chevron could
+              // ever put it back, so it has to work on every day, not just
+              // an editable one.
+              onToggleCollapse: { withAnimation(.snappy(duration: 0.2)) { collapsed.toggle() } }) {
             if isWorkoutDay && canEdit {
                 startWorkoutButton
             }
@@ -564,6 +571,18 @@ private struct SessionPanel: View {
                         timer.start(seconds: rest)
                     }
                 }
+
+                // A second way back to collapsed, next to the checklist
+                // rather than a small chevron up in the header that's easy
+                // to miss once the panel is already full of rows.
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { collapsed = true }
+                } label: {
+                    Text("Collapse")
+                        .font(Theme.mono(10, weight: .bold))
+                        .foregroundStyle(Theme.muted)
+                }
+                .buttonStyle(.plain)
             }
 
             // Outside the collapse branch on purpose: it summarises the whole
