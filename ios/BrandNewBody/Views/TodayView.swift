@@ -493,6 +493,13 @@ private struct SessionPanel: View {
     /// Stamped fresh each time Start is tapped, not once per panel — this
     /// view can live on screen for hours without the session ever opening.
     @State private var workoutStartedAt = Date()
+    /// Lift IDs already congratulated for a PR on the current `activeDate` —
+    /// cleared alongside `collapsedFor` in `syncCollapse`. Without this,
+    /// re-opening an already-finished session (the button reads "Review
+    /// workout" once `isComplete`) and tapping Finish again would replay the
+    /// same "New PR" trophy every time, since the record itself doesn't stop
+    /// being true just because it's already been shown once.
+    @State private var acknowledgedPRs: Set<String> = []
 
     private var day: TrainingDay { Plan.day(dow) }
     private var log: DayRecord { state.day(activeDate) }
@@ -604,7 +611,8 @@ private struct SessionPanel: View {
         .onDisappear { debouncer.flush { flushNote(for: activeDate) } }
         .fullScreenCover(isPresented: $showActiveWorkout) {
             ActiveWorkoutView(state: state, day: day, activeDate: activeDate,
-                               items: displayedItems, startedAt: workoutStartedAt)
+                               items: displayedItems, startedAt: workoutStartedAt,
+                               isToday: editingDate == nil, acknowledgedPRs: $acknowledgedPRs)
         }
     }
 
@@ -679,6 +687,7 @@ private struct SessionPanel: View {
         guard collapsedFor != activeDate else { return }
         collapsedFor = activeDate
         collapsed = true
+        acknowledgedPRs = []
     }
 
     private func workoutBanner(_ workouts: [DetectedWorkout]) -> some View {
@@ -758,6 +767,12 @@ private struct ActiveWorkoutView: View {
     var activeDate: String
     var items: [Exercise]
     var startedAt: Date
+    /// False while back-filling a past day through this same screen — a PR
+    /// trophy for data entered well after the fact reads as a live moment
+    /// that didn't happen, the same reason the WHOOP workout banner is
+    /// today-only. Back-filled sets still save exactly as they do today.
+    var isToday: Bool
+    @Binding var acknowledgedPRs: Set<String>
 
     @Environment(AppStore.self) private var store
     @Environment(RestTimer.self) private var timer
@@ -924,18 +939,21 @@ private struct ActiveWorkoutView: View {
         for item in items where !log.done.contains(item.key) {
             store.toggleItem(item.key, on: activeDate)
         }
+        guard isToday else { dismiss(); return }
         let records = newRecords()
         guard !records.isEmpty else { dismiss(); return }
+        acknowledgedPRs.formUnion(records.map(\.id))
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         sessionPRs = records
     }
 
     /// Every lift trained today that just beat its own history — see
-    /// `Lifts.newRecord`. Skips anything with no `liftID` (a warm-up, the
-    /// pyramid line) the same way the set-input fields already do.
+    /// `Lifts.newRecord` — and hasn't already had its trophy shown this
+    /// visit. Skips anything with no `liftID` (a warm-up, the pyramid line)
+    /// the same way the set-input fields already do.
     private func newRecords() -> [NewRecord] {
         items.compactMap { item -> NewRecord? in
-            guard let liftID = item.liftID, liftID != "pyramid" else { return nil }
+            guard let liftID = item.liftID, liftID != "pyramid", !acknowledgedPRs.contains(liftID) else { return nil }
             guard let improvement = Lifts.newRecord(state.liftHistory(liftID), on: activeDate) else { return nil }
             return NewRecord(id: liftID, name: item.displayName(state), improvement: improvement)
         }
