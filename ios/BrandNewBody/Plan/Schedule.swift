@@ -204,7 +204,28 @@ public enum Plan {
                     Exercise(key: "we-legpress", name: "Leg press, limited depth",
                              prescription: "3 × 10 — depth is the progression variable here, not the plate; go a little deeper only after 24h with no next-day reaction",
                              rir: "1–2", liftID: "legpress"),
-                    Exercise(key: "we-calf", name: "Calf raises", prescription: "3 × 15", rir: "0–2", liftID: "calf"),
+                    // 3 sets up to 5, with Saturday doing the same: calves were
+                    // the one group in the whole week sitting nearer a
+                    // maintenance dose than a growth one, at 6 sets. They are
+                    // also the group that least tolerates being under-dosed —
+                    // slow-twitch dominant, and the smallest measured growth
+                    // response of any muscle group studied. 10 a week now,
+                    // which crosses the point where the dose-response curve
+                    // stops being steep. Cheap sets to add: ankle-only work
+                    // carries almost no systemic fatigue, and none of it puts
+                    // the knee under flexion or rotation, so this is unaffected
+                    // by knee-care mode either way.
+                    //
+                    // Knee straight here on purpose. The gastrocnemius crosses
+                    // the knee, so it only takes real tension with the leg
+                    // extended; Saturday's bent-knee version is what reaches
+                    // the soleus underneath it. Same liftID for both, as
+                    // before — one combined progression history, and the
+                    // implement note stays prose rather than splitting the
+                    // history in two.
+                    Exercise(key: "we-calf", name: "Calf raises · standing",
+                             prescription: "5 × 12–15 — leg straight, full stretch at the bottom",
+                             rir: "0–2", liftID: "calf"),
                     Exercise(key: "we-hlr", name: "Hanging leg raises",
                              prescription: "3 × 12 — add a dumbbell between the feet when 12 is easy",
                              rir: "0–2", liftID: "hlr"),
@@ -300,7 +321,13 @@ public enum Plan {
                     // here fixes the frequency without repeating Wednesday's hinge.
                     Exercise(key: "sa-ext", name: "45° back extension",
                              prescription: "3 × 10–12 — hip thrust or Nordic if no bench", rir: "1–2", liftID: "ext"),
-                    Exercise(key: "sa-calf", name: "Calf raises", prescription: "3 × 12–15 — pause at the top",
+                    // The bent-knee half of the pair — see Wednesday's note.
+                    // Knee bent takes the gastrocnemius out of it and leaves
+                    // the soleus doing the work, and the soleus is the more
+                    // slow-twitch of the two, which is why the reps run higher
+                    // here than on Wednesday rather than the same.
+                    Exercise(key: "sa-calf", name: "Calf raises · seated",
+                             prescription: "5 × 15–20 — knee bent, pause at the top; standing is fine if there's no seated machine",
                              rir: "0–2", liftID: "calf"),
                     // Loaded flexion, so abs get progressive overload like
                     // anything else. The pyramid's sit-ups are endurance work.
