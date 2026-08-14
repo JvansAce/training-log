@@ -281,8 +281,19 @@ public enum Plan {
                     // no working volume anywhere in the week.
                     Exercise(key: "fr-facepull", name: "Face pulls",
                              prescription: "3 × 15 — load it, pause at the face", rir: "0–2", liftID: "facepull"),
-                    Exercise(key: "fr-arms", name: "Curls + triceps", prescription: "2 × 12 each",
-                             rir: "0–1", liftID: "arms"),
+                    // Split from one combined "Curls + triceps" line into two
+                    // named lifts with their own history — the shared entry
+                    // read as one number for two different exercises, which
+                    // is confusing to log and tells you nothing useful looking
+                    // back. Named rather than left open like the row above:
+                    // the triceps' long head crosses the shoulder as well as
+                    // the elbow, and trains better lengthened overhead than
+                    // pushed down in front of the body — the same
+                    // joint-crossing logic behind the calf split on Wed/Sat.
+                    Exercise(key: "fr-curl", name: "Dumbbell curl", prescription: "2 × 12",
+                             rir: "0–1", liftID: "curl"),
+                    Exercise(key: "fr-tricep", name: "Overhead triceps extension", prescription: "2 × 12",
+                             rir: "0–1", liftID: "tricep"),
                 ]),
 
             TrainingDay(

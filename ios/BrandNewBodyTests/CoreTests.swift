@@ -1094,6 +1094,18 @@ final class CoreTests: XCTestCase {
         }
     }
 
+    /// "Curls + triceps" used to be one shared entry for two different
+    /// exercises — one number that could mean either lift depending on the
+    /// week, which is exactly the confusion this split fixes. Guards against
+    /// the two drifting back together onto one id.
+    func testCurlsAndTricepsHaveSeparateLifts() {
+        let friday = Plan.day(5).items
+        XCTAssertTrue(friday.contains { $0.liftID == "curl" })
+        XCTAssertTrue(friday.contains { $0.liftID == "tricep" })
+        XCTAssertNotEqual(friday.first { $0.liftID == "curl" }?.key,
+                          friday.first { $0.liftID == "tricep" }?.key)
+    }
+
     /// Two lift ids sharing a display name are indistinguishable everywhere
     /// `Plan.liftNames` is what gets rendered — most sharply in the weekly
     /// "beaten this week" list, which carries no day context at all, so a
