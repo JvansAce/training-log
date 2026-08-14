@@ -14,8 +14,12 @@ public enum Consistency {
     }
 
     public static func didSession(_ state: LogState, on date: String) -> Bool {
-        guard let dow = DateKit.dow(key: date) else { return false }
-        return state.day(date).done.count >= sessionNeed(dow: dow)
+        // `effectiveDow` rather than the date's own calendar weekday — a day
+        // swapped to a lighter plan (Thursday's two items instead of a
+        // lifting day's five) has a lower bar to clear, and using the
+        // literal weekday here would judge it against a plan that isn't the
+        // one actually shown or logged against.
+        state.day(date).done.count >= sessionNeed(dow: state.effectiveDow(on: date))
     }
 
     public static func sessions(_ state: LogState, from: String, to: String) -> Int {

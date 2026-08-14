@@ -143,7 +143,11 @@ struct ProgressPage: View {
 
     private func openDay(_ logged: [String]) -> Int {
         let all = groups(logged)
-        return all.contains { $0.dow == state.todayDow } ? state.todayDow : (all.first?.dow ?? 1)
+        // `effectiveDow` rather than `todayDow`: on a swapped day this is
+        // the group you're actually about to train, same as everywhere else
+        // that reads "today" now goes through the override.
+        let today = state.effectiveDow(on: state.today)
+        return all.contains { $0.dow == today } ? today : (all.first?.dow ?? 1)
     }
 }
 

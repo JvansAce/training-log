@@ -30,9 +30,15 @@ struct TodayView: View {
 
     private var state: LogState { store.state }
     private var sectionOrder: [TodaySection] { TodaySectionOrderStore.load(from: sectionOrderRaw) }
-    private var viewingDow: Int { viewing ?? state.todayDow }
-    /// Only today, or an explicitly back-filled day, can be written to.
-    private var canEdit: Bool { editingDate != nil || viewingDow == state.todayDow }
+    /// Defaults to `activeDate`'s effective weekday — its own override if
+    /// one was set (see `LogState.effectiveDow`), so following a swapped
+    /// plan doesn't require re-tapping the day strip on every visit.
+    private var viewingDow: Int { viewing ?? state.effectiveDow(on: activeDate) }
+    /// Only today's own effective day, or an explicitly back-filled day, can
+    /// be written to. Comparing against `effectiveDow` rather than
+    /// `state.todayDow` is what lets a swap actually be edited rather than
+    /// just previewed.
+    private var canEdit: Bool { editingDate != nil || viewingDow == state.effectiveDow(on: activeDate) }
     private var activeDate: String { editingDate ?? state.today }
     private var isViewingToday: Bool { editingDate == nil && viewing == nil }
 
@@ -94,8 +100,13 @@ struct TodayView: View {
             .sheet(isPresented: $showBackfillPicker) {
                 BackfillSheet(selection: $backfillDate,
                               note: "Edits that day's checklist and lifts directly, instead of losing the session.") { date in
-                    editingDate = DateKit.key(date)
-                    viewing = DateKit.dow(date)
+                    let key = DateKit.key(date)
+                    editingDate = key
+                    // `effectiveDow` rather than the date's own calendar
+                    // weekday — re-opening a day that was itself swapped
+                    // has to land back on the plan it was actually logged
+                    // against, not the one its calendar date would suggest.
+                    viewing = state.effectiveDow(on: key)
                     showBackfillPicker = false
                 }
                 // A fixed 360pt used to clip this: the title, note and
@@ -123,7 +134,12 @@ private struct TodayHero: View {
     /// Filtered the same way Today's own panel is — otherwise the hidden
     /// side of a knee-care substitution sits in this count forever unticked,
     /// and "done today" can never reach its own total. See `Knee.swift`.
-    private var todayItems: [Exercise] { Knee.adjustedItems(Plan.day(state.todayDow).items, kneeCareMode: state.kneeCareMode) }
+    /// `effectiveDow` rather than `todayDow`: a swapped day's hero number has
+    /// to match the checklist actually showing underneath it, not the
+    /// calendar's own weekday.
+    private var todayItems: [Exercise] {
+        Knee.adjustedItems(Plan.day(state.effectiveDow(on: state.today)).items, kneeCareMode: state.kneeCareMode)
+    }
     private var doneCount: Int { min(state.day(state.today).done.count, todayItems.count) }
     private var totalCount: Int { todayItems.count }
     private var fraction: Double { totalCount > 0 ? Double(doneCount) / Double(totalCount) : 0 }
@@ -154,7 +170,10 @@ private struct TodayHero: View {
             HStack(spacing: 4) {
                 ForEach(Plan.order, id: \.self) { dow in
                     let day = Plan.day(dow)
-                    let isToday = dow == state.todayDow
+                    // The plan actually being followed today, not the
+                    // calendar's own weekday — matches `isViewing` below and
+                    // the same choice made on the Week tab's strip.
+                    let isToday = dow == state.effectiveDow(on: state.today)
                     let isViewing = dow == viewing
                     Button { onSelect(dow) } label: {
                         VStack(spacing: 5) {
@@ -614,8 +633,28 @@ private struct SessionPanel: View {
                 Note("Note: \(log.note)")
             }
 
+            // Swapping and previewing share the same "not today's own
+            // weekday" gate, and split on `canEdit` from there: editable
+            // means this dow is the swap already in effect for today, not
+            // editable means it's still just a preview and the swap is on
+            // offer.
             if dow != state.todayDow && editingDate == nil {
-                ActionButton(title: "Back to today", action: onBackToToday)
+                if canEdit {
+                    HStack {
+                        PTag("today · following \(Plan.dayNames[dow] ?? "")'s plan")
+                        ActionButton(title: "Revert to \(Plan.dayNames[state.todayDow] ?? "today")'s plan") {
+                            store.setDayOverride(nil, on: state.today)
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ActionButton(title: "Back to today", action: onBackToToday)
+                        ActionButton(title: "Follow this instead of today's plan", prominent: true) {
+                            store.setDayOverride(dow, on: state.today)
+                            onBackToToday()
+                        }
+                    }
+                }
             }
         }
         .onAppear { load(); syncCollapse() }

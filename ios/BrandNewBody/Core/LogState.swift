@@ -45,17 +45,23 @@ public struct DayRecord: Codable, Hashable, Sendable {
     /// Mobility drill keys (`mob-hang`) — also keys, for the same reason.
     public var mobility: Set<String>
     public var note: String
+    /// Follow a different weekday's plan on this date — sore from Friday, so
+    /// Saturday's lifts happen Sunday instead. `nil` is "whatever this date's
+    /// own weekday prescribes", the default for every day that's never had
+    /// this touched. See `LogState.effectiveDow`.
+    public var dayOverride: Int?
 
     public init(done: Set<String> = [], fuelHit: Bool = false,
-                mobility: Set<String> = [], note: String = "") {
+                mobility: Set<String> = [], note: String = "", dayOverride: Int? = nil) {
         self.done = done
         self.fuelHit = fuelHit
         self.mobility = mobility
         self.note = note
+        self.dayOverride = dayOverride
     }
 
     enum CodingKeys: String, CodingKey {
-        case done, fuelHit, mobility, note
+        case done, fuelHit, mobility, note, dayOverride
     }
 
     /// Hand-written only to read both shapes of `mobility`. A backup exported
@@ -68,6 +74,7 @@ public struct DayRecord: Codable, Hashable, Sendable {
         done = (try? container.decode(Set<String>.self, forKey: .done)) ?? []
         fuelHit = (try? container.decode(Bool.self, forKey: .fuelHit)) ?? false
         note = (try? container.decode(String.self, forKey: .note)) ?? ""
+        dayOverride = try? container.decode(Int.self, forKey: .dayOverride)
         if let keys = try? container.decode(Set<String>.self, forKey: .mobility) {
             mobility = keys
         } else if let positions = try? container.decode(Set<Int>.self, forKey: .mobility) {
@@ -78,7 +85,7 @@ public struct DayRecord: Codable, Hashable, Sendable {
     }
 
     public var isEmpty: Bool {
-        done.isEmpty && !fuelHit && mobility.isEmpty && note.isEmpty
+        done.isEmpty && !fuelHit && mobility.isEmpty && note.isEmpty && dayOverride == nil
     }
 }
 
@@ -280,6 +287,15 @@ public struct LogState: Codable, Hashable, Sendable {
 
     public func day(_ date: String) -> DayRecord {
         logs[date] ?? DayRecord()
+    }
+
+    /// Which weekday's plan actually applies to this date — that date's own
+    /// override if one was set, otherwise its calendar weekday. Every lookup
+    /// that decides which exercises, mobility focus or fuel target a date
+    /// gets should go through this rather than `DateKit.dow` directly, so a
+    /// swapped day stays consistent everywhere it's read.
+    public func effectiveDow(on date: String) -> Int {
+        day(date).dayOverride ?? DateKit.dow(key: date) ?? 0
     }
 
     public func mindDay(_ date: String) -> MindDayRecord {

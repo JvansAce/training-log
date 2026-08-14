@@ -116,7 +116,8 @@ final class AppStore {
                     done: existing.done.union(day.record.done),
                     fuelHit: existing.fuelHit || day.record.fuelHit,
                     mobility: existing.mobility.union(day.record.mobility),
-                    note: existing.note.isEmpty ? day.record.note : existing.note)
+                    note: existing.note.isEmpty ? day.record.note : existing.note,
+                    dayOverride: existing.dayOverride ?? day.record.dayOverride)
             } else {
                 next.logs[day.date] = day.record
             }
@@ -270,6 +271,16 @@ final class AppStore {
         let entry = dayEntry(date)
         var record = entry.record
         if record.mobility.contains(key) { record.mobility.remove(key) } else { record.mobility.insert(key) }
+        entry.apply(record)
+        commit(entry)
+    }
+
+    /// `nil` clears it, reverting the date to its own calendar weekday's
+    /// plan. See `DayRecord.dayOverride`.
+    func setDayOverride(_ dow: Int?, on date: String) {
+        let entry = dayEntry(date)
+        var record = entry.record
+        record.dayOverride = dow
         entry.apply(record)
         commit(entry)
     }

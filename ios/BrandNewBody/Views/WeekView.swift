@@ -82,7 +82,9 @@ private struct WeekHero: View {
             HStack(spacing: 4) {
                 ForEach(Plan.order, id: \.self) { dow in
                     let day = Plan.day(dow)
-                    let isToday = dow == state.todayDow
+                    // The plan actually being followed today, not the
+                    // calendar's own weekday — see `LogState.effectiveDow`.
+                    let isToday = dow == state.effectiveDow(on: state.today)
                     VStack(spacing: 5) {
                         Text(day.label)
                             .font(Theme.mono(10, weight: isToday ? .bold : .regular))
@@ -111,7 +113,7 @@ private struct DayRow: View {
     var state: LogState
 
     private var day: TrainingDay { Plan.day(dow) }
-    private var isToday: Bool { dow == state.todayDow }
+    private var isToday: Bool { dow == state.effectiveDow(on: state.today) }
     /// Same filter Today applies — otherwise a knee-care substitution shows
     /// up here as two items instead of one, since both sides are real,
     /// permanent entries in `Plan.schedule`. See `Knee.swift`.

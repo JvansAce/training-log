@@ -19,8 +19,9 @@ public enum SessionExport {
     /// nil when the day has nothing logged worth exporting, so callers can
     /// simply not offer the button rather than hand over an empty string.
     public static func text(_ state: LogState, on date: String) -> String? {
-        guard let dow = DateKit.dow(key: date) else { return nil }
-        let day = Plan.day(dow)
+        // `effectiveDow` rather than the date's own calendar weekday, so a
+        // swapped day exports the plan actually followed that day.
+        let day = Plan.day(state.effectiveDow(on: date))
 
         var lines: [String] = []
         var totalSets = 0

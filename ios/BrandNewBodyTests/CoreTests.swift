@@ -588,6 +588,20 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Consistency.sessionNeed(dow: 0), 2)   // rest day has two
     }
 
+    /// A Tuesday swapped to follow Sunday's much shorter plan must be judged
+    /// against Sunday's need (2), not Tuesday's own (3) — otherwise a fully
+    /// completed swapped session reads as an incomplete one and quietly
+    /// breaks the streak it should have extended.
+    func testDidSessionJudgesASwappedDayByThePlanItActuallyFollowed() {
+        var state = makeState()
+        let tuesday = "2026-05-05"
+        XCTAssertEqual(DateKit.dow(key: tuesday), 2)
+        state.logs[tuesday] = DayRecord(dayOverride: 0)
+        let sundayKeys = Plan.day(0).items.prefix(2).map(\.key)
+        state.logs[tuesday]?.done = Set(sundayKeys)
+        XCTAssertTrue(Consistency.didSession(state, on: tuesday))
+    }
+
     func testGreenStreakCountsFullWeeksOnly() {
         var state = makeState()
         fillSessions(&state, from: "2026-06-01", to: "2026-08-02", perWeek: 4)
@@ -1027,6 +1041,51 @@ final class CoreTests: XCTestCase {
                                  mobility: ["mob-hang", "mob-squat"], note: "note")
         let data = try JSONEncoder().encode(original)
         XCTAssertEqual(try JSONDecoder().decode(DayRecord.self, from: data), original)
+    }
+
+    /// Same round trip with a day swap on it — a backup taken mid-swap has to
+    /// restore the swap, not silently drop back to the calendar weekday.
+    func testDayRecordRoundTripsWithADayOverride() throws {
+        let original = DayRecord(dayOverride: 6)
+        let data = try JSONEncoder().encode(original)
+        let restored = try JSONDecoder().decode(DayRecord.self, from: data)
+        XCTAssertEqual(restored.dayOverride, 6)
+        XCTAssertEqual(restored, original)
+    }
+
+    /// A day with nothing but a swap on it is still real content — `commit`
+    /// deletes anything `isEmpty`, and a swap deleted the moment it's set
+    /// would silently undo itself on the very next reload.
+    func testDayRecordWithOnlyADayOverrideIsNotEmpty() {
+        XCTAssertFalse(DayRecord(dayOverride: 6).isEmpty)
+    }
+
+    // MARK: - Day swaps
+
+    /// Sore from Friday, so Saturday's plan gets followed on Sunday instead —
+    /// `effectiveDow` is what makes every lookup (the checklist, mobility
+    /// focus, fuel target) agree on which day that actually is.
+    func testEffectiveDowUsesTheOverrideWhenSet() {
+        var state = makeState()
+        let sunday = "2026-05-10" // a genuine Sunday
+        XCTAssertEqual(DateKit.dow(key: sunday), 0)
+        XCTAssertEqual(state.effectiveDow(on: sunday), 0, "no override yet — falls back to the calendar weekday")
+
+        state.logs[sunday] = DayRecord(dayOverride: 6)
+        XCTAssertEqual(state.effectiveDow(on: sunday), 6)
+
+        state.logs[sunday] = DayRecord(dayOverride: nil)
+        XCTAssertEqual(state.effectiveDow(on: sunday), 0, "clearing the override reverts to the calendar weekday")
+    }
+
+    /// The override lives on the date it was set for, not globally — a swap
+    /// made for Sunday must not leak into how any other date reads.
+    func testEffectiveDowOverrideDoesNotLeakToOtherDates() {
+        var state = makeState()
+        let sunday = "2026-05-10"
+        let monday = "2026-05-11"
+        state.logs[sunday] = DayRecord(dayOverride: 6)
+        XCTAssertEqual(state.effectiveDow(on: monday), 1, "Monday's own weekday, unaffected by Sunday's swap")
     }
 
     // MARK: - Session export

@@ -66,6 +66,8 @@ final class DayEntry {
     /// than being silently dropped on first launch.
     var mobilityIndices: [Int] = []
     var note: String = ""
+    /// See `DayRecord.dayOverride`.
+    var dayOverrideDow: Int?
 
     init(date: String) {
         self.date = date
@@ -73,7 +75,7 @@ final class DayEntry {
 
     var record: DayRecord {
         DayRecord(done: Set(doneKeys), fuelHit: fuelHit,
-                  mobility: Set(mobilityKeys), note: note)
+                  mobility: Set(mobilityKeys), note: note, dayOverride: dayOverrideDow)
     }
 
     func apply(_ record: DayRecord) {
@@ -81,6 +83,7 @@ final class DayEntry {
         fuelHit = record.fuelHit
         mobilityKeys = record.mobility.sorted()
         note = record.note
+        dayOverrideDow = record.dayOverride
     }
 
     /// Legacy ticks count as content, so an un-migrated row is never mistaken
