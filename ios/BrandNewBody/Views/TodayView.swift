@@ -633,25 +633,29 @@ private struct SessionPanel: View {
                 Note("Note: \(log.note)")
             }
 
-            // Swapping and previewing share the same "not today's own
-            // weekday" gate, and split on `canEdit` from there: editable
-            // means this dow is the swap already in effect for today, not
-            // editable means it's still just a preview and the swap is on
-            // offer.
-            if dow != state.todayDow && editingDate == nil {
-                if canEdit {
-                    HStack {
-                        PTag("today · following \(Plan.dayNames[dow] ?? "")'s plan")
-                        ActionButton(title: "Revert to \(Plan.dayNames[state.todayDow] ?? "today")'s plan") {
-                            store.setDayOverride(nil, on: state.today)
-                        }
-                    }
-                } else {
+            // Two independent conditions, not one gate split by `canEdit`:
+            // previewing (not editable) always offers a way back and a way
+            // to swap, regardless of whether some *other* day is already
+            // the active swap — otherwise previewing your own actual
+            // weekday while a swap to a different one is active had no way
+            // back at all, since it never satisfied a single shared
+            // "dow != todayDow" gate. Editable-and-mismatched-from-the-
+            // calendar is the separate, narrower case: a swap is the reason
+            // you can edit a dow that isn't today's own.
+            if editingDate == nil {
+                if !canEdit {
                     VStack(alignment: .leading, spacing: 8) {
                         ActionButton(title: "Back to today", action: onBackToToday)
                         ActionButton(title: "Follow this instead of today's plan", prominent: true) {
                             store.setDayOverride(dow, on: state.today)
                             onBackToToday()
+                        }
+                    }
+                } else if dow != state.todayDow {
+                    HStack {
+                        PTag("today · following \(Plan.dayNames[dow] ?? "")'s plan")
+                        ActionButton(title: "Revert to \(Plan.dayNames[state.todayDow] ?? "today")'s plan") {
+                            store.setDayOverride(nil, on: state.today)
                         }
                     }
                 }
@@ -869,6 +873,14 @@ private struct ActiveWorkoutView: View {
                     if timer.isRunning { RestTimerBar() }
                 }
                 .animation(.snappy(duration: 0.2), value: timer.isRunning)
+                // This screen is its own presentation, not a child of the
+                // tab's own ScrollView — so the `.keyboardDoneBar()` that
+                // covers every kg/reps field everywhere else in the app
+                // (see `RootView.content`) never reached the same fields
+                // in here. Number pads have no return key of their own,
+                // so without this there was no way to dismiss one at all.
+                .scrollDismissesKeyboard(.interactively)
+                .keyboardDoneBar()
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Close") { dismiss() }
