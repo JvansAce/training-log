@@ -1191,6 +1191,66 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(HevySearchTerms.bestMatch(for: "bench press", in: candidates)?.id, "2")
     }
 
+    // MARK: - Hevy body measurements
+
+    func testHevyMeasurementsImportsWeightAndWaist() {
+        let entries = [
+            HevyBodyMeasurement(date: "2026-06-01", weightKg: 79.5, waistCm: 85),
+            HevyBodyMeasurement(date: "2026-06-08", weightKg: 78.2, waistCm: nil),
+        ]
+        let result = HevyImport.applyMeasurements(entries)
+        XCTAssertEqual(result.weights, [
+            WeightRecord(date: "2026-06-01", kg: 79.5), WeightRecord(date: "2026-06-08", kg: 78.2),
+        ])
+        XCTAssertEqual(result.waist, [WaistRecord(date: "2026-06-01", cm: 85)])
+        XCTAssertEqual(result.lastDate, "2026-06-08")
+    }
+
+    /// A decoding mismatch on the unconfirmed field names must never hand a
+    /// wildly implausible number to the weight trend — the same bound the
+    /// manual weigh-in field on Today already enforces.
+    func testHevyMeasurementsRejectsImplausibleValues() {
+        let entries = [HevyBodyMeasurement(date: "2026-06-01", weightKg: 4, waistCm: 900)]
+        let result = HevyImport.applyMeasurements(entries)
+        XCTAssertTrue(result.weights.isEmpty)
+        XCTAssertTrue(result.waist.isEmpty)
+        XCTAssertEqual(result.lastDate, "2026-06-01", "the cursor still moves, so this date isn't refetched forever")
+    }
+
+    // MARK: - Hevy routine push
+
+    func testRoutineInputSkipsItemsWithNoMappingYet() {
+        // Tuesday's own lifts, mapped only partway.
+        let input = HevyImport.routineInput(for: 2, mapping: ["row": "TEMPLATE-ROW"], folderID: "folder-1")
+        XCTAssertEqual(input.folderID, "folder-1")
+        XCTAssertTrue(input.exercises.contains { $0.exerciseTemplateID == "TEMPLATE-ROW" })
+        // Only the mapped lift made it in — every exercise template id in
+        // the result has to trace back to something actually in `mapping`.
+        let mappedIDs = Set(["TEMPLATE-ROW"])
+        XCTAssertTrue(input.exercises.allSatisfy { mappedIDs.contains($0.exerciseTemplateID) })
+    }
+
+    /// The routine's set count and rep target come from the prescription
+    /// text itself — "3 × 8–10" — not a second, separately maintained copy
+    /// of the same numbers.
+    func testRoutineInputReadsSetCountAndRepRangeFromThePrescription() {
+        let input = HevyImport.routineInput(for: 2, mapping: ["row": "TEMPLATE-ROW"], folderID: nil)
+        let row = try! XCTUnwrap(input.exercises.first { $0.exerciseTemplateID == "TEMPLATE-ROW" })
+        XCTAssertEqual(row.sets.count, 3, "\"3 × 8–10\"")
+        XCTAssertEqual(row.sets.first?.repRange?.start, 8)
+        XCTAssertEqual(row.sets.first?.repRange?.end, 10)
+    }
+
+    /// A prescription with no clean numeric range ("3 × max reps") still
+    /// stands up the right number of rows, just without a target range —
+    /// same fallback `Lifts.prescribedSets` already documents.
+    func testRoutineInputHandlesAnOpenEndedPrescription() {
+        let input = HevyImport.routineInput(for: 5, mapping: ["pullup": "TEMPLATE-PULLUP"], folderID: nil)
+        let pullup = try! XCTUnwrap(input.exercises.first { $0.exerciseTemplateID == "TEMPLATE-PULLUP" })
+        XCTAssertEqual(pullup.sets.count, 3, "\"3 × max reps\"")
+        XCTAssertNil(pullup.sets.first?.repRange)
+    }
+
     /// A session of nothing but bodyweight or assisted work reports its sets
     /// and stays quiet about volume rather than claiming 0 kg.
     func testSessionExportOmitsVolumeWhenNothingWasExternallyLoaded() throws {

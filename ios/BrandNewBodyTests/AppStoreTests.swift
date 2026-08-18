@@ -193,4 +193,59 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertNotEqual(rows.first?.startDate, "2020-01-01")
     }
+
+    // MARK: - Hevy
+
+    /// Same rule as `logWeight`'s own seed eviction, exercised through the
+    /// Hevy import path instead of the manual one — a history sync's dates
+    /// almost never land on the seed's own install-day date, so the fix has
+    /// to check for the seed by its flag, not by matching the date being
+    /// written.
+    func testApplyHevyMeasurementsEvictsTheSeedRegardlessOfDate() {
+        let (store, _) = makeStore()
+        XCTAssertEqual(store.state.weights.count, 1)
+        XCTAssertTrue(store.state.weights[0].seed)
+
+        let pastDate = DateKit.adding(-30, to: store.state.today)
+        store.applyHevyMeasurements(.init(weights: [WeightRecord(date: pastDate, kg: 82)], lastDate: pastDate))
+
+        XCTAssertEqual(store.state.weights.count, 1)
+        XCTAssertEqual(store.state.weights[0].date, pastDate)
+        XCTAssertFalse(store.state.weights[0].seed)
+    }
+
+    /// A set logged in Hevy must never quietly replace one already typed by
+    /// hand for the same lift and date — the whole reason `LiftEntry`
+    /// carries a `source` at all.
+    func testApplyHevyImportNeverOverwritesAHandTypedSet() {
+        let (store, _) = makeStore()
+        let date = store.state.today
+        store.setSets([LiftSet(kg: 60, reps: 8)], liftID: "row", on: date)
+
+        let imported = HevyImport.Result(
+            sets: [.init(liftID: "row", date: date, sets: [LiftSet(kg: 40, reps: 15)])],
+            lastWorkoutID: "w1")
+        store.applyHevyImport(imported)
+
+        let sets = store.state.liftHistory("row").first?.sets
+        XCTAssertEqual(sets, [LiftSet(kg: 60, reps: 8)], "the hand-typed set must survive untouched")
+    }
+
+    /// Editing an already-imported set by hand reclaims manual protection —
+    /// a later sync (even one covering the same lift and date again) must
+    /// not put the old Hevy numbers back over what was just typed.
+    func testEditingAnImportedSetByHandProtectsItFromTheNextSync() {
+        let (store, _) = makeStore()
+        let date = store.state.today
+        store.applyHevyImport(.init(
+            sets: [.init(liftID: "row", date: date, sets: [LiftSet(kg: 60, reps: 8)])], lastWorkoutID: "w1"))
+        XCTAssertEqual(store.state.liftHistory("row").first?.sets, [LiftSet(kg: 60, reps: 8)])
+
+        store.setSets([LiftSet(kg: 65, reps: 5)], liftID: "row", on: date)
+
+        store.applyHevyImport(.init(
+            sets: [.init(liftID: "row", date: date, sets: [LiftSet(kg: 60, reps: 8)])], lastWorkoutID: "w2"))
+        XCTAssertEqual(store.state.liftHistory("row").first?.sets, [LiftSet(kg: 65, reps: 5)],
+                       "the hand-typed edit must win over a re-sync of the old imported numbers")
+    }
 }

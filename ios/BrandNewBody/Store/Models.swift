@@ -34,6 +34,9 @@ final class WeightEntry {
     /// The 79 kg placeholder a fresh install starts with. Marked so the UI
     /// doesn't tell a brand-new user they already weighed in this morning.
     var seed: Bool = false
+    /// `nil` for anything typed by hand, `"hevy"` for one written by
+    /// `AppStore.applyHevyMeasurements` — see `LiftEntry.source`, same rule.
+    var source: String?
 
     init(date: String, kg: Double, seed: Bool = false) {
         self.date = date
@@ -46,6 +49,7 @@ final class WeightEntry {
 final class WaistEntry {
     var date: String = ""
     var cm: Double = 0
+    var source: String?
 
     init(date: String, cm: Double) {
         self.date = date
@@ -266,6 +270,15 @@ final class AppSettings {
     /// The newest Hevy workout id already imported, so a sync resumes from
     /// here instead of re-reading the account's whole history every time.
     var hevyLastImportedWorkoutID: String?
+    /// The newest body-measurement date already imported.
+    var hevyLastImportedMeasurementDate: String?
+    /// The one Hevy routine folder this app's pushed routines live in,
+    /// created once and reused rather than one new folder per push.
+    var hevyRoutineFolderID: String?
+    /// JSON `[String: String]` — weekday (as a string key, e.g. "2") to the
+    /// Hevy routine id already pushed for it, so re-pushing updates that
+    /// routine in place instead of creating a duplicate every time.
+    var hevyRoutineIDsData: Data = Data()
 
     init(startDate: String, createdAt: Date = Date()) {
         self.startDate = startDate
@@ -280,6 +293,11 @@ final class AppSettings {
     var hevyMapping: [String: String] {
         get { JSONCoding.decode(hevyMappingData, default: [:]) }
         set { hevyMappingData = JSONCoding.encode(newValue) }
+    }
+
+    var hevyRoutineIDs: [String: String] {
+        get { JSONCoding.decode(hevyRoutineIDsData, default: [:]) }
+        set { hevyRoutineIDsData = JSONCoding.encode(newValue) }
     }
 }
 

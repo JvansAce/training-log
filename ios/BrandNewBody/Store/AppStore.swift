@@ -93,6 +93,9 @@ final class AppStore {
         next.charismaSince = settings.charismaSince
         next.hevyMapping = settings.hevyMapping
         next.hevyLastImportedWorkoutID = settings.hevyLastImportedWorkoutID
+        next.hevyLastImportedMeasurementDate = settings.hevyLastImportedMeasurementDate
+        next.hevyRoutineFolderID = settings.hevyRoutineFolderID
+        next.hevyRoutineIDs = settings.hevyRoutineIDs
 
         next.weights = fetch(WeightEntry.self).map {
             WeightRecord(date: $0.date, kg: $0.kg, seed: $0.seed)
@@ -626,6 +629,69 @@ final class AppStore {
         reload()
     }
 
+    /// Same batching and the same hand-typed-entry protection as
+    /// `applyHevyImport`, for weight and waist instead of lifts. The seed
+    /// placeholder is fair game to replace either way — a real weigh-in,
+    /// from Hevy or typed in, is what it exists to be replaced by.
+    func applyHevyMeasurements(_ result: HevyImport.MeasurementResult) {
+        guard !result.weights.isEmpty || !result.waist.isEmpty || result.lastDate != nil else { return }
+
+        var weightsByDate: [String: WeightEntry] = [:]
+        for entry in fetch(WeightEntry.self) { weightsByDate[entry.date] = entry }
+        // `logWeight` deletes the seed row the moment there's a real
+        // weigh-in on *any* date, not just its own — a Hevy history sync
+        // almost never lands exactly on the seed's own date, so matching
+        // that same "any date" rule here (rather than only checking the
+        // date being written) is what actually clears it.
+        if !result.weights.isEmpty, let seed = weightsByDate.values.first(where: \.seed) {
+            context.delete(seed)
+            weightsByDate.removeValue(forKey: seed.date)
+        }
+        for record in result.weights {
+            if let existing = weightsByDate[record.date] {
+                // The seed row itself was already cleared above, so
+                // anything still here is either a prior Hevy import or a
+                // genuine hand-typed entry.
+                guard existing.source == "hevy" else { continue }
+                existing.kg = record.kg
+                existing.source = "hevy"
+            } else {
+                let created = WeightEntry(date: record.date, kg: record.kg)
+                created.source = "hevy"
+                context.insert(created)
+                weightsByDate[record.date] = created
+            }
+        }
+
+        var waistByDate: [String: WaistEntry] = [:]
+        for entry in fetch(WaistEntry.self) { waistByDate[entry.date] = entry }
+        for record in result.waist {
+            if let existing = waistByDate[record.date] {
+                guard existing.source == "hevy" else { continue }
+                existing.cm = record.cm
+            } else {
+                let created = WaistEntry(date: record.date, cm: record.cm)
+                created.source = "hevy"
+                context.insert(created)
+                waistByDate[record.date] = created
+            }
+        }
+
+        if let lastDate = result.lastDate {
+            fetchSettings().hevyLastImportedMeasurementDate = lastDate
+        }
+        save()
+        reload()
+    }
+
+    func setHevyRoutineFolderID(_ id: String) {
+        mutate { $0.hevyRoutineFolderID = id }
+    }
+
+    func setHevyRoutineIDs(_ ids: [String: String]) {
+        mutate { $0.hevyRoutineIDs = ids }
+    }
+
     // MARK: - Backup and reset
 
     /// The JSON backup. iCloud carries the log between the user's own devices;
@@ -691,6 +757,9 @@ final class AppStore {
         settings.charismaSince = incoming.charismaSince
         settings.hevyMapping = incoming.hevyMapping
         settings.hevyLastImportedWorkoutID = incoming.hevyLastImportedWorkoutID
+        settings.hevyLastImportedMeasurementDate = incoming.hevyLastImportedMeasurementDate
+        settings.hevyRoutineFolderID = incoming.hevyRoutineFolderID
+        settings.hevyRoutineIDs = incoming.hevyRoutineIDs
 
         for record in incoming.weights {
             context.insert(WeightEntry(date: record.date, kg: record.kg, seed: record.seed))

@@ -46,8 +46,13 @@ struct BrandNewBodyApp: App {
             Task {
                 guard hevy.status == .connected else { return }
                 let workouts = await hevy.fetchNewWorkouts(since: store.state.hevyLastImportedWorkoutID)
-                guard !workouts.isEmpty else { return }
-                store.applyHevyImport(HevyImport.apply(workouts, mapping: store.state.hevyMapping))
+                if !workouts.isEmpty {
+                    store.applyHevyImport(HevyImport.apply(workouts, mapping: store.state.hevyMapping))
+                }
+                let measurements = await hevy.fetchNewBodyMeasurements(since: store.state.hevyLastImportedMeasurementDate)
+                if !measurements.isEmpty {
+                    store.applyHevyMeasurements(HevyImport.applyMeasurements(measurements))
+                }
             }
         }
     }

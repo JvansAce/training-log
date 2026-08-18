@@ -23,6 +23,8 @@ struct SetupView: View {
     @State private var hevyAPIKeyField = ""
     @State private var hevySyncMessage: String? = nil
     @State private var hevySyncing = false
+    @State private var hevyPushMessage: String? = nil
+    @State private var hevyPushingRoutines = false
     @State private var showHevyMapping = false
 
     private var state: LogState { store.state }
@@ -170,9 +172,15 @@ struct SetupView: View {
                 if let hevySyncMessage {
                     Text(hevySyncMessage).font(.footnote).foregroundStyle(.secondary)
                 }
+                Button(hevyPushingRoutines ? "Pushing…" : "Push routines to Hevy") { Task { await pushRoutines() } }
+                    .disabled(hevyPushingRoutines)
+                if let hevyPushMessage {
+                    Text(hevyPushMessage).font(.footnote).foregroundStyle(.secondary)
+                }
                 Button("Disconnect", role: .destructive) {
                     hevy.disconnect()
                     hevySyncMessage = nil
+                    hevyPushMessage = nil
                 }
             }
         } header: {
@@ -181,15 +189,18 @@ struct SetupView: View {
             switch hevy.status {
             case .notConnected:
                 Text("""
-                    Log sets in Hevy and have them show up here automatically — matched by exercise, not \
-                    by guessing from the name. Needs Hevy Pro for the API key, from hevy.com/settings?developer.
+                    Log sets, weight and waist in Hevy and have them show up here automatically — matched \
+                    by exercise, not by guessing from the name. Needs Hevy Pro for the API key, from \
+                    hevy.com/settings?developer.
                     """)
             case .connected:
                 Text("""
-                    Checked automatically each time you open the app. "Review matches" is where each of \
-                    this plan's lifts gets pointed at the right exercise in your own Hevy catalog — \
-                    matched by exercise id, so it keeps working even if you rename or re-word anything on \
-                    either side.
+                    Checked automatically each time you open the app — lifts, weight and waist together. \
+                    "Review matches" is where each of this plan's lifts gets pointed at the right exercise \
+                    in your own Hevy catalog — matched by exercise id, so it keeps working even if you \
+                    rename or re-word anything on either side. "Push routines" puts the four lifting days \
+                    into your Hevy account as ready-made routines, in one folder, using that same matching \
+                    — only needs a re-push if the plan itself changes.
                     """)
             }
         }
@@ -201,26 +212,98 @@ struct SetupView: View {
     private func syncHevy() async {
         hevySyncing = true
         defer { hevySyncing = false }
+
         let workouts = await hevy.fetchNewWorkouts(since: state.hevyLastImportedWorkoutID)
-        guard !workouts.isEmpty else {
+        var setCount = 0
+        var unmatchedCount = 0
+        if !workouts.isEmpty {
+            let result = HevyImport.apply(workouts, mapping: state.hevyMapping)
+            store.applyHevyImport(result)
+            setCount = result.sets.count
+            unmatchedCount = result.unmatchedTemplateIDs.count
+        }
+
+        let measurements = await hevy.fetchNewBodyMeasurements(since: state.hevyLastImportedMeasurementDate)
+        var measurementCount = 0
+        if !measurements.isEmpty {
+            let result = HevyImport.applyMeasurements(measurements)
+            store.applyHevyMeasurements(result)
+            measurementCount = result.weights.count + result.waist.count
+        }
+
+        guard !workouts.isEmpty || !measurements.isEmpty else {
             hevySyncMessage = "Up to date — nothing new since the last sync."
             return
         }
-        let result = HevyImport.apply(workouts, mapping: state.hevyMapping)
-        store.applyHevyImport(result)
-        let setCount = result.sets.count
-        var message = setCount == 0
-            ? "\(workouts.count) new workout\(workouts.count == 1 ? "" : "s"), but nothing matched a mapped exercise."
-            : "Imported \(setCount) lift\(setCount == 1 ? "" : "s") from \(workouts.count) new workout\(workouts.count == 1 ? "" : "s")."
+
+        var parts: [String] = []
+        if !workouts.isEmpty {
+            parts.append(setCount == 0
+                ? "\(workouts.count) new workout\(workouts.count == 1 ? "" : "s"), nothing matched a mapped exercise"
+                : "\(setCount) lift\(setCount == 1 ? "" : "s") from \(workouts.count) workout\(workouts.count == 1 ? "" : "s")")
+        }
+        if !measurements.isEmpty {
+            parts.append("\(measurementCount) weight/waist reading\(measurementCount == 1 ? "" : "s")")
+        }
+        var message = "Imported " + parts.joined(separator: ", ") + "."
         // Named explicitly rather than left for the "0 matched" case above
         // to imply — a workout can partly match (some lifts imported fine)
         // while still leaving exercises unmapped, and both of those need
         // to be visible, not just the all-or-nothing case.
-        if !result.unmatchedTemplateIDs.isEmpty {
-            let n = result.unmatchedTemplateIDs.count
-            message += " \(n) exercise\(n == 1 ? "" : "s") in there \(n == 1 ? "isn't" : "aren't") mapped yet — check Review matches."
+        if unmatchedCount > 0 {
+            message += " \(unmatchedCount) exercise\(unmatchedCount == 1 ? "" : "s") in there \(unmatchedCount == 1 ? "isn't" : "aren't") mapped yet — check Review matches."
         }
         hevySyncMessage = message
+    }
+
+    private func pushRoutines() async {
+        hevyPushingRoutines = true
+        defer { hevyPushingRoutines = false }
+
+        var folderID = state.hevyRoutineFolderID
+        if folderID == nil {
+            // Checks for an existing "BrandNewBody" folder before creating
+            // one — so a push that already succeeded once at Hevy, but
+            // whose id never made it back here (a dropped connection right
+            // after the POST, say), doesn't leave a retry creating a
+            // second folder with the same name.
+            folderID = await hevy.findOrCreateRoutineFolder(title: "BrandNewBody")
+            guard let folderID else {
+                hevyPushMessage = "Couldn't create a routine folder — check the connection and try again."
+                return
+            }
+            store.setHevyRoutineFolderID(folderID)
+        }
+
+        var routineIDs = state.hevyRoutineIDs
+        var pushed = 0, skipped = 0, failed = 0
+        for dow in [2, 3, 5, 6] {
+            let input = HevyImport.routineInput(for: dow, mapping: state.hevyMapping, folderID: folderID)
+            // A day that WAS pushed before and has since lost all its
+            // mapped exercises is left as-is rather than pushed empty —
+            // its Hevy routine can go stale here, which "Review matches"
+            // plus a re-push is how to catch up once re-mapped.
+            guard !input.exercises.isEmpty else { skipped += 1; continue }
+            let key = String(dow)
+            if let existingID = routineIDs[key] {
+                if await hevy.updateRoutine(id: existingID, input) { pushed += 1 } else { failed += 1 }
+            } else if let foundID = await hevy.findExistingRoutine(title: input.title) {
+                routineIDs[key] = foundID
+                if await hevy.updateRoutine(id: foundID, input) { pushed += 1 } else { failed += 1 }
+            } else if let newID = await hevy.createRoutine(input) {
+                routineIDs[key] = newID
+                pushed += 1
+            } else {
+                failed += 1
+            }
+        }
+        store.setHevyRoutineIDs(routineIDs)
+
+        var parts: [String] = []
+        if pushed > 0 { parts.append("Pushed \(pushed) routine\(pushed == 1 ? "" : "s") to Hevy, in one folder.") }
+        if failed > 0 { parts.append("\(failed) failed — check the connection and try again.") }
+        if skipped > 0 { parts.append("\(skipped) day\(skipped == 1 ? "" : "s") skipped, nothing mapped yet.") }
+        hevyPushMessage = parts.isEmpty ? "Nothing to push." : parts.joined(separator: " ")
     }
 
     // MARK: Today layout

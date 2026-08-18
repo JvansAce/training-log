@@ -222,6 +222,13 @@ public struct LogState: Codable, Hashable, Sendable {
     public var hevyMapping: [String: String] = [:]
     /// The newest Hevy workout id already imported.
     public var hevyLastImportedWorkoutID: String?
+    /// The newest body-measurement date already imported.
+    public var hevyLastImportedMeasurementDate: String?
+    /// The one Hevy routine folder this app's pushed routines live in.
+    public var hevyRoutineFolderID: String?
+    /// Weekday (as a string key) → the Hevy routine id already pushed for
+    /// it, so re-pushing updates in place instead of duplicating.
+    public var hevyRoutineIDs: [String: String] = [:]
 
     // MARK: Clock
 
@@ -240,7 +247,8 @@ public struct LogState: Codable, Hashable, Sendable {
              weights, waist, logs, lifts, pyramidLog, deloadLog, off, recovery,
              mindStartDate, mindUnlocked, mindLogs, mindTargets, mindLadderLog, mindLadderCap,
              charismaIx, charismaSince,
-             hevyMapping, hevyLastImportedWorkoutID,
+             hevyMapping, hevyLastImportedWorkoutID, hevyLastImportedMeasurementDate,
+             hevyRoutineFolderID, hevyRoutineIDs,
              today
     }
 
@@ -290,6 +298,9 @@ public struct LogState: Codable, Hashable, Sendable {
 
         hevyMapping = try c.decodeIfPresent([String: String].self, forKey: .hevyMapping) ?? [:]
         hevyLastImportedWorkoutID = try c.decodeIfPresent(String.self, forKey: .hevyLastImportedWorkoutID)
+        hevyLastImportedMeasurementDate = try c.decodeIfPresent(String.self, forKey: .hevyLastImportedMeasurementDate)
+        hevyRoutineFolderID = try c.decodeIfPresent(String.self, forKey: .hevyRoutineFolderID)
+        hevyRoutineIDs = try c.decodeIfPresent([String: String].self, forKey: .hevyRoutineIDs) ?? [:]
     }
 
     public var todayDow: Int { DateKit.dow(key: today) ?? 0 }

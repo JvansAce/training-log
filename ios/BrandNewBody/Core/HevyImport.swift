@@ -105,6 +105,62 @@ public enum HevyImport {
     private static func dateKey(_ isoTimestamp: String) -> String? {
         WhoopDay.parse(isoTimestamp).map(DateKit.key)
     }
+
+    // MARK: - Body measurements
+
+    public struct MeasurementResult: Equatable {
+        public var weights: [WeightRecord] = []
+        public var waist: [WaistRecord] = []
+        /// The newest date actually seen, regardless of whether it produced
+        /// a usable reading — an out-of-range value below still moves the
+        /// cursor forward so a sync doesn't keep re-fetching it forever.
+        public var lastDate: String?
+    }
+
+    /// Sanity-bounded the same way the manual weigh-in and waist fields on
+    /// Today already are — a decoding mismatch on an unconfirmed field name
+    /// (see `HevyBodyMeasurement`) should read as "nothing usable here",
+    /// not as a wildly implausible number landing in the weight trend.
+    private static let plausibleBodyweightKg = 40.0...200
+    private static let plausibleWaistCm = 50.0...150
+
+    public static func applyMeasurements(_ entries: [HevyBodyMeasurement]) -> MeasurementResult {
+        var result = MeasurementResult()
+        for entry in entries {
+            if let kg = entry.weightKg, plausibleBodyweightKg.contains(kg) {
+                result.weights.append(WeightRecord(date: entry.date, kg: kg, seed: false))
+            }
+            if let cm = entry.waistCm, plausibleWaistCm.contains(cm) {
+                result.waist.append(WaistRecord(date: entry.date, cm: cm))
+            }
+        }
+        result.lastDate = entries.last?.date
+        return result
+    }
+
+    // MARK: - Routine push
+
+    /// The four lifting days' `Exercise` list, translated into a Hevy
+    /// routine — target rep ranges from `Lifts.parseScheme`, set counts
+    /// from `Lifts.prescribedSets`, so the routine reads the same
+    /// prescription this app's own checklist does rather than a second,
+    /// separately-maintained copy of it. An item with no liftID (a warm-up)
+    /// or no entry yet in `mapping` is simply left out — the routine ends
+    /// up with whatever of the day *is* mapped, not blocked on all of it
+    /// being mapped at once.
+    public static func routineInput(for dow: Int, mapping: [String: String], folderID: String?) -> HevyRoutineInput {
+        let day = Plan.day(dow)
+        let exercises: [HevyRoutineExerciseInput] = day.items.compactMap { item -> HevyRoutineExerciseInput? in
+            guard let liftID = item.liftID, let templateID = mapping[liftID] else { return nil }
+            let count = min(Lifts.maxSets, max(1, Lifts.prescribedSets(item.prescription) ?? 1))
+            let scheme = Lifts.parseScheme(item.prescription)
+            let sets = (0..<count).map { _ in
+                HevyRoutineSetInput(repRange: scheme.map { .init(start: $0.low, end: $0.high) })
+            }
+            return HevyRoutineExerciseInput(exerciseTemplateID: templateID, sets: sets, restSeconds: day.restSeconds)
+        }
+        return HevyRoutineInput(title: day.title, folderID: folderID, exercises: exercises)
+    }
 }
 
 /// Search terms for the one-time "match my exercises" pass — plain English

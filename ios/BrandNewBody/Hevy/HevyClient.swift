@@ -123,6 +123,185 @@ final class HevyClient {
         else { return nil }
         return try? JSONDecoder().decode(HevyExerciseTemplatesPage.self, from: data)
     }
+
+    // MARK: - Body measurements
+
+    /// Every measurement entry newer than `lastSeenDate` — same shape as
+    /// `fetchNewWorkouts`, but keyed by the date itself rather than an
+    /// opaque id, since that's what `GET .../{date}` already implies this
+    /// resource is addressed by.
+    ///
+    /// Response shape is inferred, the same caveat as exercise templates:
+    /// `/v1/body_measurements` hasn't been confirmed against a live
+    /// response. A mismatch here just means nothing imports — weight and
+    /// waist can still be typed in on Today exactly as before.
+    func fetchNewBodyMeasurements(since lastSeenDate: String?) async -> [HevyBodyMeasurement] {
+        var collected: [HevyBodyMeasurement] = []
+        var page = 1
+        while true {
+            guard let result = await fetchBodyMeasurementsPage(page) else { break }
+            for entry in result.measurements {
+                if let lastSeenDate, entry.date <= lastSeenDate { return collected.reversed() }
+                collected.append(entry)
+            }
+            if result.measurements.isEmpty || page >= result.pageCount { break }
+            page += 1
+            if page > 20 { break }
+        }
+        return collected.reversed()
+    }
+
+    private func fetchBodyMeasurementsPage(_ page: Int) async -> HevyBodyMeasurementsPage? {
+        guard let key = keychain.get(account: Account.apiKey),
+              var components = URLComponents(url: Self.apiBase.appendingPathComponent("body_measurements"),
+                                              resolvingAgainstBaseURL: false)
+        else { return nil }
+        components.queryItems = [.init(name: "page", value: String(page)),
+                                  .init(name: "pageSize", value: "10")]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(key, forHTTPHeaderField: "api-key")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.isSuccess == true
+        else { return nil }
+        return try? JSONDecoder().decode(HevyBodyMeasurementsPage.self, from: data)
+    }
+
+    // MARK: - Routines and folders
+
+    /// An existing folder with this title, if the account already has one —
+    /// checked before creating, so a POST that actually succeeded at Hevy
+    /// but whose response never made it back to this device (dropped
+    /// connection, say) doesn't leave the next retry creating a second
+    /// folder with the same name. `createRoutine`/`updateRoutine` don't get
+    /// the same safety net for every push — the id `pushRoutines` already
+    /// persists after a first success covers the common case, and re-
+    /// checking by title before every single routine would cost a full
+    /// account routine listing on every push for a failure mode this rare.
+    func findOrCreateRoutineFolder(title: String) async -> String? {
+        if let existing = await fetchRoutineFolders().first(where: { $0.title == title }) {
+            return existing.id
+        }
+        return await createRoutineFolder(title: title)
+    }
+
+    /// An existing routine with this exact title, if the account already
+    /// has one — the one extra check `pushRoutines` makes before creating a
+    /// brand new routine (not before updating one it already has an id
+    /// for), for the same reason as `findOrCreateRoutineFolder`.
+    func findExistingRoutine(title: String) async -> String? {
+        await fetchRoutines().first(where: { $0.title == title })?.id
+    }
+
+    private func fetchRoutineFolders() async -> [HevyRoutineFolderSummary] {
+        guard keychain.get(account: Account.apiKey) != nil else { return [] }
+        var all: [HevyRoutineFolderSummary] = []
+        var page = 1
+        while page <= 20 {
+            guard let result = await fetchRoutineFoldersPage(page) else { break }
+            all.append(contentsOf: result.routineFolders)
+            if result.routineFolders.isEmpty || page >= result.pageCount { break }
+            page += 1
+        }
+        return all
+    }
+
+    private func fetchRoutineFoldersPage(_ page: Int) async -> HevyRoutineFoldersPage? {
+        guard let key = keychain.get(account: Account.apiKey),
+              var components = URLComponents(url: Self.apiBase.appendingPathComponent("routine_folders"),
+                                              resolvingAgainstBaseURL: false)
+        else { return nil }
+        components.queryItems = [.init(name: "page", value: String(page)), .init(name: "pageSize", value: "10")]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(key, forHTTPHeaderField: "api-key")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.isSuccess == true
+        else { return nil }
+        return try? JSONDecoder().decode(HevyRoutineFoldersPage.self, from: data)
+    }
+
+    private func fetchRoutines() async -> [HevyRoutineSummary] {
+        guard keychain.get(account: Account.apiKey) != nil else { return [] }
+        var all: [HevyRoutineSummary] = []
+        var page = 1
+        while page <= 20 {
+            guard let result = await fetchRoutinesPage(page) else { break }
+            all.append(contentsOf: result.routines)
+            if result.routines.isEmpty || page >= result.pageCount { break }
+            page += 1
+        }
+        return all
+    }
+
+    private func fetchRoutinesPage(_ page: Int) async -> HevyRoutinesPage? {
+        guard let key = keychain.get(account: Account.apiKey),
+              var components = URLComponents(url: Self.apiBase.appendingPathComponent("routines"),
+                                              resolvingAgainstBaseURL: false)
+        else { return nil }
+        components.queryItems = [.init(name: "page", value: String(page)), .init(name: "pageSize", value: "10")]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(key, forHTTPHeaderField: "api-key")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.isSuccess == true
+        else { return nil }
+        return try? JSONDecoder().decode(HevyRoutinesPage.self, from: data)
+    }
+
+    /// Creates one routine folder and returns its id — meant to be called
+    /// once, with the id then kept in Setup (`hevyRoutineFolderID`) rather
+    /// than re-created on every push.
+    ///
+    /// The exact request/response wrapping here — `{"routine_folder":
+    /// {...}}` — is this integration's least confident guess: none of the
+    /// three write endpoints (this one, `createRoutine`, `updateRoutine`)
+    /// have been exercised against a live account. A wrong guess fails as
+    /// an HTTP error and creates nothing; it does not partially write
+    /// something malformed.
+    private func createRoutineFolder(title: String) async -> String? {
+        guard let key = keychain.get(account: Account.apiKey) else { return nil }
+        var request = URLRequest(url: Self.apiBase.appendingPathComponent("routine_folders"))
+        request.httpMethod = "POST"
+        request.setValue(key, forHTTPHeaderField: "api-key")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try? JSONEncoder().encode(HevyRoutineFolderCreateBody(routineFolder: .init(title: title)))
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.isSuccess == true,
+              let created = try? JSONDecoder().decode(HevyRoutineFolderResponse.self, from: data)
+        else { return nil }
+        return created.routineFolder.id
+    }
+
+    /// Returns the created routine's id, or `nil` on any failure — see the
+    /// caveat on `createRoutineFolder`.
+    func createRoutine(_ input: HevyRoutineInput) async -> String? {
+        guard let key = keychain.get(account: Account.apiKey) else { return nil }
+        var request = URLRequest(url: Self.apiBase.appendingPathComponent("routines"))
+        request.httpMethod = "POST"
+        request.setValue(key, forHTTPHeaderField: "api-key")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try? JSONEncoder().encode(HevyRoutineWriteBody(routine: input))
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.isSuccess == true,
+              let created = try? JSONDecoder().decode(HevyRoutineResponse.self, from: data)
+        else { return nil }
+        return created.routine.id
+    }
+
+    /// Replaces an existing routine's content in place — used once a push
+    /// already has an id stored for that weekday, so re-pushing the plan
+    /// updates it rather than creating a duplicate.
+    func updateRoutine(id: String, _ input: HevyRoutineInput) async -> Bool {
+        guard let key = keychain.get(account: Account.apiKey) else { return false }
+        var request = URLRequest(url: Self.apiBase.appendingPathComponent("routines/\(id)"))
+        request.httpMethod = "PUT"
+        request.setValue(key, forHTTPHeaderField: "api-key")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try? JSONEncoder().encode(HevyRoutineWriteBody(routine: input))
+        guard let (_, response) = try? await URLSession.shared.data(for: request) else { return false }
+        return (response as? HTTPURLResponse)?.isSuccess == true
+    }
 }
 
 private extension HTTPURLResponse {
@@ -200,5 +379,118 @@ struct HevyExerciseTemplatesPage: Decodable {
         case page
         case pageCount = "page_count"
         case exerciseTemplates = "exercise_templates"
+    }
+}
+
+/// Inferred shape — see the caveat on `fetchNewBodyMeasurements`. Only
+/// `date`, `weight_kg` and `waist_cm` are read; whatever other measurements
+/// Hevy tracks (body fat %, other circumferences, …) are ignored the same
+/// way `Decodable` already ignores fields this app has no use for elsewhere.
+struct HevyBodyMeasurement: Decodable {
+    let date: String
+    let weightKg: Double?
+    let waistCm: Double?
+    enum CodingKeys: String, CodingKey {
+        case date
+        case weightKg = "weight_kg"
+        case waistCm = "waist_cm"
+    }
+}
+
+struct HevyBodyMeasurementsPage: Decodable {
+    let page: Int
+    let pageCount: Int
+    let measurements: [HevyBodyMeasurement]
+    enum CodingKeys: String, CodingKey {
+        case page
+        case pageCount = "page_count"
+        case measurements = "body_measurements"
+    }
+}
+
+// MARK: - Routine wire format (least confident — see createRoutineFolder)
+
+struct HevyRoutineSetInput: Encodable {
+    var type = "normal"
+    var repRange: RepRange?
+    struct RepRange: Encodable { var start: Int; var end: Int }
+    enum CodingKeys: String, CodingKey {
+        case type
+        case repRange = "rep_range"
+    }
+}
+
+struct HevyRoutineExerciseInput: Encodable {
+    var exerciseTemplateID: String
+    var sets: [HevyRoutineSetInput]
+    var restSeconds: Int?
+    enum CodingKeys: String, CodingKey {
+        case exerciseTemplateID = "exercise_template_id"
+        case sets
+        case restSeconds = "rest_seconds"
+    }
+}
+
+struct HevyRoutineInput: Encodable {
+    var title: String
+    var folderID: String?
+    var exercises: [HevyRoutineExerciseInput]
+    enum CodingKeys: String, CodingKey {
+        case title
+        case folderID = "folder_id"
+        case exercises
+    }
+}
+
+struct HevyRoutineWriteBody: Encodable {
+    var routine: HevyRoutineInput
+}
+
+struct HevyRoutineResponse: Decodable {
+    struct Inner: Decodable { let id: String }
+    let routine: Inner
+}
+
+struct HevyRoutineFolderCreateBody: Encodable {
+    struct Inner: Encodable { var title: String }
+    var routineFolder: Inner
+    enum CodingKeys: String, CodingKey { case routineFolder = "routine_folder" }
+}
+
+struct HevyRoutineFolderResponse: Decodable {
+    struct Inner: Decodable { let id: String }
+    let routineFolder: Inner
+    enum CodingKeys: String, CodingKey { case routineFolder = "routine_folder" }
+}
+
+struct HevyRoutineFolderSummary: Decodable {
+    let id: String
+    let title: String
+}
+
+struct HevyRoutineFoldersPage: Decodable {
+    let page: Int
+    let pageCount: Int
+    let routineFolders: [HevyRoutineFolderSummary]
+    enum CodingKeys: String, CodingKey {
+        case page
+        case pageCount = "page_count"
+        case routineFolders = "routine_folders"
+    }
+}
+
+struct HevyRoutineSummary: Decodable {
+    let id: String
+    let title: String
+}
+
+struct HevyRoutinesPage: Decodable {
+    let page: Int
+    let pageCount: Int
+    let routines: [HevyRoutineSummary]
+    enum CodingKeys: String, CodingKey {
+        case page
+        case pageCount = "page_count"
+        case routines
     }
 }
