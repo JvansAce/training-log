@@ -326,7 +326,7 @@ struct HevyWorkoutsPage: Decodable {
     }
 }
 
-struct HevyWorkout: Decodable {
+public struct HevyWorkout: Decodable {
     let id: String
     let title: String
     /// ISO 8601 with a numeric UTC offset, e.g. `2026-06-12T14:39:18+00:00`.
@@ -366,7 +366,7 @@ struct HevySet: Decodable {
 }
 
 /// Inferred shape — see the doc comment on `fetchAllExerciseTemplates`.
-struct HevyExerciseTemplate: Decodable, Identifiable, Equatable {
+public struct HevyExerciseTemplate: Decodable, Identifiable, Equatable {
     let id: String
     let title: String
 }
@@ -386,7 +386,7 @@ struct HevyExerciseTemplatesPage: Decodable {
 /// `date`, `weight_kg` and `waist_cm` are read; whatever other measurements
 /// Hevy tracks (body fat %, other circumferences, …) are ignored the same
 /// way `Decodable` already ignores fields this app has no use for elsewhere.
-struct HevyBodyMeasurement: Decodable {
+public struct HevyBodyMeasurement: Decodable {
     let date: String
     let weightKg: Double?
     let waistCm: Double?
@@ -431,7 +431,7 @@ struct HevyRoutineExerciseInput: Encodable {
     }
 }
 
-struct HevyRoutineInput: Encodable {
+public struct HevyRoutineInput: Encodable {
     var title: String
     var folderID: String?
     var exercises: [HevyRoutineExerciseInput]
