@@ -216,6 +216,13 @@ public struct LogState: Codable, Hashable, Sendable {
     public var charismaIx: Int = 0
     public var charismaSince: String?
 
+    // MARK: Hevy
+
+    /// This app's liftID → Hevy's `exercise_template_id`. See `HevyImport`.
+    public var hevyMapping: [String: String] = [:]
+    /// The newest Hevy workout id already imported.
+    public var hevyLastImportedWorkoutID: String?
+
     // MARK: Clock
 
     /// The day the app considers "now". Injected rather than read from the
@@ -233,6 +240,7 @@ public struct LogState: Codable, Hashable, Sendable {
              weights, waist, logs, lifts, pyramidLog, deloadLog, off, recovery,
              mindStartDate, mindUnlocked, mindLogs, mindTargets, mindLadderLog, mindLadderCap,
              charismaIx, charismaSince,
+             hevyMapping, hevyLastImportedWorkoutID,
              today
     }
 
@@ -279,6 +287,9 @@ public struct LogState: Codable, Hashable, Sendable {
         mindLadderCap = try c.decodeIfPresent(Int.self, forKey: .mindLadderCap) ?? 1
         charismaIx = try c.decodeIfPresent(Int.self, forKey: .charismaIx) ?? 0
         charismaSince = try c.decodeIfPresent(String.self, forKey: .charismaSince)
+
+        hevyMapping = try c.decodeIfPresent([String: String].self, forKey: .hevyMapping) ?? [:]
+        hevyLastImportedWorkoutID = try c.decodeIfPresent(String.self, forKey: .hevyLastImportedWorkoutID)
     }
 
     public var todayDow: Int { DateKit.dow(key: today) ?? 0 }

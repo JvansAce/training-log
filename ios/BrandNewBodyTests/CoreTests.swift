@@ -1043,6 +1043,154 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(lines.last, "3 sets · 1080 kg total volume")
     }
 
+    // MARK: - Hevy import
+
+    /// A matched exercise's normal sets land in the app's own `LiftSet`
+    /// shape — noon UTC so the calendar-day conversion can't land on the
+    /// wrong side of midnight in any real timezone.
+    func testHevyImportMapsMatchedExerciseToItsLiftID() {
+        let workout = HevyWorkout(
+            id: "w1", title: "A", startTime: "2026-06-12T12:00:00+00:00",
+            exercises: [
+                HevyExercise(title: "Front Squat (Barbell)", exerciseTemplateID: "TEMPLATE-SQUAT", sets: [
+                    HevySet(type: "normal", weightKg: 60, reps: 8),
+                    HevySet(type: "normal", weightKg: 60, reps: 8),
+                ]),
+            ])
+        let result = HevyImport.apply([workout], mapping: ["fsquat": "TEMPLATE-SQUAT"])
+        XCTAssertEqual(result.sets.count, 1)
+        XCTAssertEqual(result.sets.first?.liftID, "fsquat")
+        XCTAssertEqual(result.sets.first?.date, "2026-06-12")
+        XCTAssertEqual(result.sets.first?.sets, [LiftSet(kg: 60, reps: 8), LiftSet(kg: 60, reps: 8)])
+        XCTAssertTrue(result.ticks.contains(.init(date: "2026-06-12", key: "sa-fsquat")))
+        XCTAssertEqual(result.lastWorkoutID, "w1")
+    }
+
+    /// Both `0` and `null` mean bodyweight on Hevy's side too — the same
+    /// convention `LiftSet` already normalises to, so no separate case is
+    /// needed for either.
+    func testHevyImportTreatsZeroAndNullWeightAsBodyweight() {
+        let workout = HevyWorkout(
+            id: "w1", title: "A", startTime: "2026-06-12T12:00:00+00:00",
+            exercises: [
+                HevyExercise(title: "Pull Up", exerciseTemplateID: "TEMPLATE-PULLUP", sets: [
+                    HevySet(type: "normal", weightKg: 0, reps: 10),
+                    HevySet(type: "normal", weightKg: nil, reps: 8),
+                ]),
+            ])
+        let result = HevyImport.apply([workout], mapping: ["pullup": "TEMPLATE-PULLUP"])
+        XCTAssertEqual(result.sets.first?.sets, [LiftSet(kg: nil, reps: 10), LiftSet(kg: nil, reps: 8)])
+    }
+
+    /// Warm-up sets don't count as working sets anywhere else in this app,
+    /// and an exercise that was only ever warmed up (never a real "normal"
+    /// set) contributes nothing at all, not an empty entry.
+    func testHevyImportExcludesWarmupSets() {
+        let workout = HevyWorkout(
+            id: "w1", title: "A", startTime: "2026-06-12T12:00:00+00:00",
+            exercises: [
+                HevyExercise(title: "Bench Press", exerciseTemplateID: "TEMPLATE-BENCH", sets: [
+                    HevySet(type: "warmup", weightKg: 20, reps: 10),
+                    HevySet(type: "normal", weightKg: 60, reps: 5),
+                ]),
+                HevyExercise(title: "Face Pull", exerciseTemplateID: "TEMPLATE-FACEPULL", sets: [
+                    HevySet(type: "warmup", weightKg: 10, reps: 15),
+                ]),
+            ])
+        let result = HevyImport.apply(
+            [workout], mapping: ["flat": "TEMPLATE-BENCH", "facepull": "TEMPLATE-FACEPULL"])
+        XCTAssertEqual(result.sets.count, 1, "the warmup-only exercise contributes nothing")
+        XCTAssertEqual(result.sets.first?.sets, [LiftSet(kg: 60, reps: 5)])
+    }
+
+    /// The same lift logged in two separate blocks in one workout — a
+    /// straight-set portion, then an AMRAP set added on its own, say — has
+    /// to merge into one entry. `AppStore.applyHevyImport` writes one
+    /// `LiftEntry` per (liftID, date); two separate `SetEntry` values for
+    /// the same pair would have the second silently replace the first.
+    func testHevyImportMergesTheSameLiftLoggedTwiceInOneWorkout() {
+        let workout = HevyWorkout(
+            id: "w1", title: "A", startTime: "2026-06-12T12:00:00+00:00",
+            exercises: [
+                HevyExercise(title: "Bench Press", exerciseTemplateID: "TEMPLATE-BENCH", sets: [
+                    HevySet(type: "normal", weightKg: 60, reps: 8),
+                ]),
+                HevyExercise(title: "Bench Press", exerciseTemplateID: "TEMPLATE-BENCH", sets: [
+                    HevySet(type: "normal", weightKg: 40, reps: 15),
+                ]),
+            ])
+        let result = HevyImport.apply([workout], mapping: ["flat": "TEMPLATE-BENCH"])
+        XCTAssertEqual(result.sets.count, 1, "one entry, not two — the second block must not replace the first")
+        XCTAssertEqual(result.sets.first?.sets, [LiftSet(kg: 60, reps: 8), LiftSet(kg: 40, reps: 15)])
+    }
+
+    /// Two liftIDs mistakenly pointed at the same Hevy exercise resolve the
+    /// collision by `Plan.liftIDs`'s own stable order — "the earlier one
+    /// wins", the same rule `Plan.liftIDs` itself already documents — not
+    /// by a dictionary's iteration order, which a fresh instance built from
+    /// the same pairs is not guaranteed to repeat from one process to the
+    /// next.
+    func testHevyImportReverseMappingCollisionFavoursTheEarlierLiftID() {
+        // "squat" is earlier than "fsquat" in Plan.liftIDs (Wednesday before
+        // Saturday), so it should win a collision on the same id.
+        let mapping = ["fsquat": "SAME-ID", "squat": "SAME-ID"]
+        let workout = HevyWorkout(
+            id: "w1", title: "A", startTime: "2026-06-12T12:00:00+00:00",
+            exercises: [
+                HevyExercise(title: "Squat", exerciseTemplateID: "SAME-ID", sets: [
+                    HevySet(type: "normal", weightKg: 100, reps: 5),
+                ]),
+            ])
+        let result = HevyImport.apply([workout], mapping: mapping)
+        XCTAssertEqual(result.sets.first?.liftID, "squat")
+    }
+
+    /// An exercise Hevy sent that isn't in the mapping yet is reported, not
+    /// silently dropped — Setup uses this to say "N exercises aren't
+    /// matched yet" instead of the import quietly losing data.
+    func testHevyImportReportsUnmatchedTemplateIDs() {
+        let workout = HevyWorkout(
+            id: "w1", title: "A", startTime: "2026-06-12T12:00:00+00:00",
+            exercises: [
+                HevyExercise(title: "Shrugs", exerciseTemplateID: "TEMPLATE-SHRUG", sets: [
+                    HevySet(type: "normal", weightKg: 40, reps: 15),
+                ]),
+            ])
+        let result = HevyImport.apply([workout], mapping: [:])
+        XCTAssertTrue(result.sets.isEmpty)
+        XCTAssertEqual(result.unmatchedTemplateIDs, ["TEMPLATE-SHRUG"])
+    }
+
+    /// `lastWorkoutID` is whichever workout is last in the input, which
+    /// callers pass oldest-first (`HevyClient.fetchNewWorkouts`) — so the
+    /// next sync resumes from the newest one actually processed.
+    func testHevyImportLastWorkoutIDIsTheNewestProcessed() {
+        let older = HevyWorkout(id: "old", title: "A", startTime: "2026-06-01T12:00:00+00:00", exercises: [])
+        let newer = HevyWorkout(id: "new", title: "B", startTime: "2026-06-12T12:00:00+00:00", exercises: [])
+        let result = HevyImport.apply([older, newer], mapping: [:])
+        XCTAssertEqual(result.lastWorkoutID, "new")
+    }
+
+    func testHevyImportOnEmptyInputIsAllEmpty() {
+        let result = HevyImport.apply([], mapping: ["squat": "TEMPLATE-SQUAT"])
+        XCTAssertTrue(result.sets.isEmpty)
+        XCTAssertTrue(result.ticks.isEmpty)
+        XCTAssertNil(result.lastWorkoutID)
+    }
+
+    /// The shortest title containing the search term wins — Hevy's catalog
+    /// lists variants ("Bench Press (Barbell)", "Close Bench Press
+    /// (Barbell)") and the plainest one is the intended default, not
+    /// whichever the catalog happens to list first.
+    func testHevySearchTermsBestMatchPrefersTheShortestTitle() {
+        let candidates = [
+            HevyExerciseTemplate(id: "1", title: "Close Grip Bench Press (Barbell)"),
+            HevyExerciseTemplate(id: "2", title: "Bench Press (Barbell)"),
+            HevyExerciseTemplate(id: "3", title: "Incline Bench Press (Barbell)"),
+        ]
+        XCTAssertEqual(HevySearchTerms.bestMatch(for: "bench press", in: candidates)?.id, "2")
+    }
+
     /// A session of nothing but bodyweight or assisted work reports its sets
     /// and stays quiet about volume rather than claiming 0 kg.
     func testSessionExportOmitsVolumeWhenNothingWasExternallyLoaded() throws {

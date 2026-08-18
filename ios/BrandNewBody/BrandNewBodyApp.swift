@@ -8,6 +8,7 @@ struct BrandNewBodyApp: App {
     @State private var store: AppStore
     @State private var restTimer = RestTimer()
     @State private var whoop = WhoopClient()
+    @State private var hevy = HevyClient()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -23,6 +24,7 @@ struct BrandNewBodyApp: App {
                 .environment(store)
                 .environment(restTimer)
                 .environment(whoop)
+                .environment(hevy)
                 .preferredColorScheme(.dark)
                 .tint(Theme.red)
         }
@@ -40,6 +42,12 @@ struct BrandNewBodyApp: App {
                 if let reading = whoop.today?.recovery {
                     store.applyWhoopReading(reading, on: store.state.today)
                 }
+            }
+            Task {
+                guard hevy.status == .connected else { return }
+                let workouts = await hevy.fetchNewWorkouts(since: store.state.hevyLastImportedWorkoutID)
+                guard !workouts.isEmpty else { return }
+                store.applyHevyImport(HevyImport.apply(workouts, mapping: store.state.hevyMapping))
             }
         }
     }

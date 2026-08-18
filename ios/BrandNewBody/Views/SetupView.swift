@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 struct SetupView: View {
     @Environment(AppStore.self) private var store
     @Environment(WhoopClient.self) private var whoop
+    @Environment(HevyClient.self) private var hevy
 
     @State private var exportDocument: BackupDocument? = nil
     @State private var showExporter = false
@@ -19,12 +20,18 @@ struct SetupView: View {
     @State private var message: String? = nil
     @State private var startDate = Date()
 
+    @State private var hevyAPIKeyField = ""
+    @State private var hevySyncMessage: String? = nil
+    @State private var hevySyncing = false
+    @State private var showHevyMapping = false
+
     private var state: LogState { store.state }
 
     var body: some View {
         Form {
             iCloudSection
             whoopSection
+            hevySection
             todayLayoutSection
             kneeCareSection
             backupSection
@@ -135,6 +142,85 @@ struct SetupView: View {
                     : "Recovery, strain, sleep, HRV and resting heart rate are read automatically each time you open the app.")
             }
         }
+    }
+
+    // MARK: Hevy
+
+    private var hevySection: some View {
+        Section {
+            switch hevy.status {
+            case .notConnected:
+                LabeledContent("Status", value: "Not connected")
+                SecureField("API key (Setup → Developer in Hevy)", text: $hevyAPIKeyField)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Connect Hevy") {
+                    let key = hevyAPIKeyField.trimmingCharacters(in: .whitespaces)
+                    guard !key.isEmpty else { return }
+                    hevy.connect(apiKey: key)
+                    hevyAPIKeyField = ""
+                }
+            case .connected:
+                LabeledContent("Status", value: "Connected")
+                let mapped = state.hevyMapping.count
+                LabeledContent("Exercises matched", value: "\(mapped) of \(Plan.liftIDs.count)")
+                Button("Review matches") { showHevyMapping = true }
+                Button(hevySyncing ? "Syncing…" : "Sync now") { Task { await syncHevy() } }
+                    .disabled(hevySyncing)
+                if let hevySyncMessage {
+                    Text(hevySyncMessage).font(.footnote).foregroundStyle(.secondary)
+                }
+                Button("Disconnect", role: .destructive) {
+                    hevy.disconnect()
+                    hevySyncMessage = nil
+                }
+            }
+        } header: {
+            Text("Hevy")
+        } footer: {
+            switch hevy.status {
+            case .notConnected:
+                Text("""
+                    Log sets in Hevy and have them show up here automatically — matched by exercise, not \
+                    by guessing from the name. Needs Hevy Pro for the API key, from hevy.com/settings?developer.
+                    """)
+            case .connected:
+                Text("""
+                    Checked automatically each time you open the app. "Review matches" is where each of \
+                    this plan's lifts gets pointed at the right exercise in your own Hevy catalog — \
+                    matched by exercise id, so it keeps working even if you rename or re-word anything on \
+                    either side.
+                    """)
+            }
+        }
+        .sheet(isPresented: $showHevyMapping) {
+            HevyMappingView(mapping: state.hevyMapping) { store.setHevyMapping($0) }
+        }
+    }
+
+    private func syncHevy() async {
+        hevySyncing = true
+        defer { hevySyncing = false }
+        let workouts = await hevy.fetchNewWorkouts(since: state.hevyLastImportedWorkoutID)
+        guard !workouts.isEmpty else {
+            hevySyncMessage = "Up to date — nothing new since the last sync."
+            return
+        }
+        let result = HevyImport.apply(workouts, mapping: state.hevyMapping)
+        store.applyHevyImport(result)
+        let setCount = result.sets.count
+        var message = setCount == 0
+            ? "\(workouts.count) new workout\(workouts.count == 1 ? "" : "s"), but nothing matched a mapped exercise."
+            : "Imported \(setCount) lift\(setCount == 1 ? "" : "s") from \(workouts.count) new workout\(workouts.count == 1 ? "" : "s")."
+        // Named explicitly rather than left for the "0 matched" case above
+        // to imply — a workout can partly match (some lifts imported fine)
+        // while still leaving exercises unmapped, and both of those need
+        // to be visible, not just the all-or-nothing case.
+        if !result.unmatchedTemplateIDs.isEmpty {
+            let n = result.unmatchedTemplateIDs.count
+            message += " \(n) exercise\(n == 1 ? "" : "s") in there \(n == 1 ? "isn't" : "aren't") mapped yet — check Review matches."
+        }
+        hevySyncMessage = message
     }
 
     // MARK: Today layout

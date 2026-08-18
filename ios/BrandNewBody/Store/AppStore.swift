@@ -91,6 +91,8 @@ final class AppStore {
         next.mindLadderCap = settings.mindLadderCap
         next.charismaIx = settings.charismaIx
         next.charismaSince = settings.charismaSince
+        next.hevyMapping = settings.hevyMapping
+        next.hevyLastImportedWorkoutID = settings.hevyLastImportedWorkoutID
 
         next.weights = fetch(WeightEntry.self).map {
             WeightRecord(date: $0.date, kg: $0.kg, seed: $0.seed)
@@ -331,6 +333,11 @@ final class AppStore {
             if let existing { context.delete(existing) }
         } else if let existing {
             existing.sets = usable
+            // A hand-typed edit is authoritative from here on — including
+            // over a row a Hevy sync wrote first. Otherwise editing an
+            // imported set in the app would look like it worked until the
+            // next sync quietly put Hevy's numbers back.
+            existing.source = nil
         } else {
             context.insert(LiftEntry(liftID: liftID, date: date, sets: usable))
         }
@@ -555,6 +562,70 @@ final class AppStore {
         }
     }
 
+    // MARK: - Hevy
+
+    func setHevyMapping(_ mapping: [String: String]) {
+        mutate { $0.hevyMapping = mapping }
+    }
+
+    /// Writes an already-computed `HevyImport.Result` in one batch — a
+    /// sync can cover several workouts at once, and this app's own
+    /// `reload()` re-reads all ten SwiftData model types, so it runs once
+    /// at the end rather than once per set the way `setSets` does for a
+    /// single live edit. One `fetch(LiftEntry.self)` up front for the same
+    /// reason: a per-set fetch here would repeat that full-table read once
+    /// per synced lift, on top of the one this method is already trying to
+    /// save.
+    ///
+    /// Never overwrites a lift/date that already has a hand-typed entry —
+    /// only one this same sync path wrote before (`source == "hevy"`) is
+    /// fair game to update again. Otherwise logging a set by hand and
+    /// finishing the same session in Hevy would have the next sync quietly
+    /// replace what was typed with whatever Hevy has, no warning, no way
+    /// back.
+    func applyHevyImport(_ result: HevyImport.Result) {
+        guard !result.sets.isEmpty || !result.ticks.isEmpty || result.lastWorkoutID != nil else { return }
+
+        var existingByKey: [String: LiftEntry] = [:]
+        for entry in fetch(LiftEntry.self) { existingByKey["\(entry.liftID)|\(entry.date)"] = entry }
+
+        for entry in result.sets {
+            let key = "\(entry.liftID)|\(entry.date)"
+            if let existing = existingByKey[key] {
+                guard existing.source == "hevy" else { continue }
+                existing.sets = entry.sets
+            } else {
+                let created = LiftEntry(liftID: entry.liftID, date: entry.date, sets: entry.sets, source: "hevy")
+                context.insert(created)
+                existingByKey[key] = created
+            }
+        }
+        // Same reasoning as `existingByKey` above: one fetch of the whole
+        // table rather than `dayEntry`'s own per-call fetch repeated once
+        // per date being ticked — a first-connect sync can cover well over
+        // a hundred distinct days.
+        var dayEntriesByDate: [String: DayEntry] = [:]
+        for entry in fetch(DayEntry.self) { dayEntriesByDate[entry.date] = entry }
+        for tick in result.ticks {
+            let entry: DayEntry
+            if let existing = dayEntriesByDate[tick.date] {
+                entry = existing
+            } else {
+                entry = DayEntry(date: tick.date)
+                context.insert(entry)
+                dayEntriesByDate[tick.date] = entry
+            }
+            var record = entry.record
+            record.done.insert(tick.key)
+            entry.apply(record)
+        }
+        if let lastWorkoutID = result.lastWorkoutID {
+            fetchSettings().hevyLastImportedWorkoutID = lastWorkoutID
+        }
+        save()
+        reload()
+    }
+
     // MARK: - Backup and reset
 
     /// The JSON backup. iCloud carries the log between the user's own devices;
@@ -618,6 +689,8 @@ final class AppStore {
         settings.mindLadderCap = incoming.mindLadderCap
         settings.charismaIx = incoming.charismaIx
         settings.charismaSince = incoming.charismaSince
+        settings.hevyMapping = incoming.hevyMapping
+        settings.hevyLastImportedWorkoutID = incoming.hevyLastImportedWorkoutID
 
         for record in incoming.weights {
             context.insert(WeightEntry(date: record.date, kg: record.kg, seed: record.seed))

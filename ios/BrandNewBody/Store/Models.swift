@@ -97,11 +97,18 @@ final class LiftEntry {
     var date: String = ""
     /// JSON `[LiftSet]`.
     var setsData: Data = Data()
+    /// `nil` for anything typed by hand (every entry before this existed,
+    /// and every one still made through `LiftRow`) — `"hevy"` for one
+    /// written by `AppStore.applyHevyImport`. What lets a sync update its
+    /// own past import again without ever silently overwriting something
+    /// the user actually typed for that lift and date.
+    var source: String?
 
-    init(liftID: String, date: String, sets: [LiftSet] = []) {
+    init(liftID: String, date: String, sets: [LiftSet] = [], source: String? = nil) {
         self.liftID = liftID
         self.date = date
         self.setsData = JSONCoding.encode(sets)
+        self.source = source
     }
 
     var sets: [LiftSet] {
@@ -252,6 +259,14 @@ final class AppSettings {
     var charismaIx: Int = 0
     var charismaSince: String?
 
+    /// JSON `[String: String]` — this app's liftID to Hevy's
+    /// `exercise_template_id`. Built by searching the user's own Hevy
+    /// catalog, never a hardcoded table — see `HevySearchTerms`.
+    var hevyMappingData: Data = Data()
+    /// The newest Hevy workout id already imported, so a sync resumes from
+    /// here instead of re-reading the account's whole history every time.
+    var hevyLastImportedWorkoutID: String?
+
     init(startDate: String, createdAt: Date = Date()) {
         self.startDate = startDate
         self.createdAt = createdAt
@@ -260,6 +275,11 @@ final class AppSettings {
     var mindTargets: [String: Int] {
         get { JSONCoding.decode(mindTargetsData, default: [:]) }
         set { mindTargetsData = JSONCoding.encode(newValue) }
+    }
+
+    var hevyMapping: [String: String] {
+        get { JSONCoding.decode(hevyMappingData, default: [:]) }
+        set { hevyMappingData = JSONCoding.encode(newValue) }
     }
 }
 
