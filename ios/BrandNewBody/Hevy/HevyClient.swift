@@ -190,7 +190,7 @@ final class HevyClient {
     /// brand new routine (not before updating one it already has an id
     /// for), for the same reason as `findOrCreateRoutineFolder`.
     func findExistingRoutine(title: String) async -> String? {
-        await fetchRoutines().first(where: { $0.title == title }).map { String($0.id) }
+        await fetchRoutines().first(where: { $0.title == title })?.id
     }
 
     private func fetchRoutineFolders() async -> [HevyRoutineFolderSummary] {
@@ -253,12 +253,11 @@ final class HevyClient {
     /// once, with the id then kept in Setup (`hevyRoutineFolderID`) rather
     /// than re-created on every push.
     ///
-    /// The exact request/response wrapping here — `{"routine_folder":
-    /// {...}}` — is this integration's least confident guess: none of the
-    /// three write endpoints (this one, `createRoutine`, `updateRoutine`)
-    /// have been exercised against a live account. A wrong guess fails as
-    /// an HTTP error and creates nothing; it does not partially write
-    /// something malformed.
+    /// Confirmed against a live account: the request is wrapped in
+    /// `{"routine_folder": {...}}` and so is the response. `createRoutine`
+    /// and `updateRoutine` remain unconfirmed — a wrong guess there fails
+    /// as an HTTP error or a decode failure, either way creating nothing
+    /// rather than writing something malformed.
     private func createRoutineFolder(title: String) async -> String? {
         guard let key = keychain.get(account: Account.apiKey) else { return nil }
         var request = URLRequest(url: Self.apiBase.appendingPathComponent("routine_folders"))
@@ -286,7 +285,7 @@ final class HevyClient {
               (response as? HTTPURLResponse)?.isSuccess == true,
               let created = try? JSONDecoder().decode(HevyRoutineResponse.self, from: data)
         else { return nil }
-        return String(created.routine.id)
+        return created.routine.id
     }
 
     /// Replaces an existing routine's content in place — used once a push
@@ -447,11 +446,11 @@ struct HevyRoutineWriteBody: Encodable {
 }
 
 struct HevyRoutineResponse: Decodable {
-    /// Hevy's routine/folder ids are JSON numbers, not strings — unlike
-    /// workout ids and exercise_template_ids, which are confirmed strings
-    /// from a real `/v1/workouts` response. Decoding this as `String`
-    /// silently failed every create/lookup call.
-    struct Inner: Decodable { let id: Int }
+    /// Routine ids are strings (UUIDs), unlike routine *folder* ids, which
+    /// are JSON numbers — confirmed against Hevy's own OpenAPI spec.
+    /// Decoding this as `Int` (an earlier guess, by analogy with the
+    /// folder id) silently failed every single create call.
+    struct Inner: Decodable { let id: String }
     let routine: Inner
 }
 
@@ -484,7 +483,7 @@ struct HevyRoutineFoldersPage: Decodable {
 }
 
 struct HevyRoutineSummary: Decodable {
-    let id: Int
+    let id: String
     let title: String
 }
 
