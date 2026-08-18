@@ -367,7 +367,7 @@ struct HevySet: Decodable {
 
 /// Inferred shape — see the doc comment on `fetchAllExerciseTemplates`.
 public struct HevyExerciseTemplate: Decodable, Identifiable, Equatable {
-    let id: String
+    public let id: String
     let title: String
 }
 
