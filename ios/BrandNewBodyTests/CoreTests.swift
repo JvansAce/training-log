@@ -1221,8 +1221,8 @@ final class CoreTests: XCTestCase {
 
     func testRoutineInputSkipsItemsWithNoMappingYet() {
         // Tuesday's own lifts, mapped only partway.
-        let input = HevyImport.routineInput(for: 2, mapping: ["row": "TEMPLATE-ROW"], folderID: "folder-1")
-        XCTAssertEqual(input.folderID, "folder-1")
+        let input = HevyImport.routineInput(for: 2, mapping: ["row": "TEMPLATE-ROW"], folderID: "42")
+        XCTAssertEqual(input.folderID, 42, "the app stores folder ids as strings, but Hevy's wire format takes a number")
         XCTAssertTrue(input.exercises.contains { $0.exerciseTemplateID == "TEMPLATE-ROW" })
         // Only the mapped lift made it in — every exercise template id in
         // the result has to trace back to something actually in `mapping`.

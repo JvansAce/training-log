@@ -180,7 +180,7 @@ final class HevyClient {
     /// account routine listing on every push for a failure mode this rare.
     func findOrCreateRoutineFolder(title: String) async -> String? {
         if let existing = await fetchRoutineFolders().first(where: { $0.title == title }) {
-            return existing.id
+            return String(existing.id)
         }
         return await createRoutineFolder(title: title)
     }
@@ -190,7 +190,7 @@ final class HevyClient {
     /// brand new routine (not before updating one it already has an id
     /// for), for the same reason as `findOrCreateRoutineFolder`.
     func findExistingRoutine(title: String) async -> String? {
-        await fetchRoutines().first(where: { $0.title == title })?.id
+        await fetchRoutines().first(where: { $0.title == title }).map { String($0.id) }
     }
 
     private func fetchRoutineFolders() async -> [HevyRoutineFolderSummary] {
@@ -270,7 +270,7 @@ final class HevyClient {
               (response as? HTTPURLResponse)?.isSuccess == true,
               let created = try? JSONDecoder().decode(HevyRoutineFolderResponse.self, from: data)
         else { return nil }
-        return created.routineFolder.id
+        return String(created.routineFolder.id)
     }
 
     /// Returns the created routine's id, or `nil` on any failure — see the
@@ -286,7 +286,7 @@ final class HevyClient {
               (response as? HTTPURLResponse)?.isSuccess == true,
               let created = try? JSONDecoder().decode(HevyRoutineResponse.self, from: data)
         else { return nil }
-        return created.routine.id
+        return String(created.routine.id)
     }
 
     /// Replaces an existing routine's content in place — used once a push
@@ -433,7 +433,7 @@ struct HevyRoutineExerciseInput: Encodable {
 
 public struct HevyRoutineInput: Encodable {
     var title: String
-    var folderID: String?
+    var folderID: Int?
     var exercises: [HevyRoutineExerciseInput]
     enum CodingKeys: String, CodingKey {
         case title
@@ -447,7 +447,11 @@ struct HevyRoutineWriteBody: Encodable {
 }
 
 struct HevyRoutineResponse: Decodable {
-    struct Inner: Decodable { let id: String }
+    /// Hevy's routine/folder ids are JSON numbers, not strings — unlike
+    /// workout ids and exercise_template_ids, which are confirmed strings
+    /// from a real `/v1/workouts` response. Decoding this as `String`
+    /// silently failed every create/lookup call.
+    struct Inner: Decodable { let id: Int }
     let routine: Inner
 }
 
@@ -458,13 +462,13 @@ struct HevyRoutineFolderCreateBody: Encodable {
 }
 
 struct HevyRoutineFolderResponse: Decodable {
-    struct Inner: Decodable { let id: String }
+    struct Inner: Decodable { let id: Int }
     let routineFolder: Inner
     enum CodingKeys: String, CodingKey { case routineFolder = "routine_folder" }
 }
 
 struct HevyRoutineFolderSummary: Decodable {
-    let id: String
+    let id: Int
     let title: String
 }
 
@@ -480,7 +484,7 @@ struct HevyRoutineFoldersPage: Decodable {
 }
 
 struct HevyRoutineSummary: Decodable {
-    let id: String
+    let id: Int
     let title: String
 }
 

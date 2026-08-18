@@ -159,7 +159,7 @@ public enum HevyImport {
             }
             return HevyRoutineExerciseInput(exerciseTemplateID: templateID, sets: sets, restSeconds: day.restSeconds)
         }
-        return HevyRoutineInput(title: day.title, folderID: folderID, exercises: exercises)
+        return HevyRoutineInput(title: day.title, folderID: folderID.flatMap(Int.init), exercises: exercises)
     }
 }
 
