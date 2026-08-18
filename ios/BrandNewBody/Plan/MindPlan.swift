@@ -10,8 +10,7 @@ import Foundation
 /// switched on. Seven new daily habits beginning on the same Monday is how you
 /// end up doing none of them by March, so practices unlock one at a time —
 /// earliest by week, and only once the ones already running are actually
-/// sticking. Same instinct as the pyramid cap starting at 4 rather than 6: a
-/// first day you cannot finish teaches you to ignore the app.
+/// sticking. A first day you cannot finish teaches you to ignore the app.
 public enum MindPlan {
 
     public enum PracticeKind: String, Sendable {

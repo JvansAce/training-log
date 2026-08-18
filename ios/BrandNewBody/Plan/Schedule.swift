@@ -101,9 +101,9 @@ public enum Plan {
                     // list, which carries no day context to tell them apart.
                     // 4 sets down to 3: back and lat were the one muscle group
                     // the review found genuinely over-dosed at 16–17 sets a
-                    // week, and the pyramid quietly adds ten more pull-ups on
-                    // top of that — the same reasoning that took the row from
-                    // 4 to 3, applied consistently.
+                    // week from the lifting days alone — before the pyramid,
+                    // since removed, used to add roughly ten more pull-ups a
+                    // week on top of that.
                     Exercise(key: "tu-wpullup", name: "Pull-ups · heavy",
                              prescription: "3 × 5–8 — add weight at 8",
                              rir: "1–3", liftID: "wpullup", isBodyweight: true),
@@ -130,12 +130,12 @@ public enum Plan {
                              rir: "1–2", liftID: "row", isBarbell: true),
                     Exercise(key: "tu-ohp", name: "Overhead press", prescription: "3 × 8–10",
                              rir: "1–2", liftID: "ohp", isBarbell: true),
-                    // 3 down to 2, for the reason the review raises in 3.9 and
-                    // then never spends: the pyramid already puts 20 dips and
-                    // 30 push-ups into the week at cap 4, and more every time
-                    // a round goes on. Chest and triceps are the two groups
-                    // that volume actually lands on, so this is where it gets
-                    // accounted for rather than counted twice.
+                    // 3 down to 2 — was accounting for the pyramid circuit,
+                    // since removed, which used to put 20 dips and 30
+                    // push-ups into the week at cap 4 alone. That overlap is
+                    // gone now, so this is a candidate to go back to 3 if
+                    // chest/triceps ever need more than this and the rest of
+                    // the upper days provide.
                     Exercise(key: "tu-dips", name: "Dips", prescription: "2 × 8–12", rir: "1–2", liftID: "dips",
                              isBodyweight: true),
                     // Rear delts had almost no direct volume anywhere in the
@@ -297,12 +297,11 @@ public enum Plan {
                 ]),
 
             TrainingDay(
-                dow: 6, label: "SA", colorHex: "E23B3B", title: "Lower + Pyramid", tag: "Treat it as a session",
+                dow: 6, label: "SA", colorHex: "E23B3B", title: "Lower · Volume", tag: "Rest 2–3 min / 60–90s",
                 note: """
-                    The pyramid is a full session element, not an add-on — but it's conditioning and \
-                    durability work, not the main driver of muscle growth. That's what the lifts above are \
-                    for. Alternate the two ways of progressing it: one week add a round, the next keep the \
-                    same rounds and wear the vest. 2–3 min rest on the squat, 60–90s after.
+                    Box jumps first while you're fresh — explosive work under pre-fatigue is exactly when \
+                    height drops. 2–3 min rest on hip thrust and front squat since they're still near \
+                    failure, 60–90s after.
                     """,
                 restSeconds: 180,
                 items: [
@@ -341,10 +340,9 @@ public enum Plan {
                              prescription: "5 × 15–20 — knee bent, pause at the top; standing is fine if there's no seated machine",
                              rir: "0–2", liftID: "calf"),
                     // Loaded flexion, so abs get progressive overload like
-                    // anything else. The pyramid's sit-ups are endurance work.
+                    // anything else rather than pure endurance work.
                     Exercise(key: "sa-crunch", name: "Cable crunch or weighted sit-up",
                              prescription: "3 × 10–15 — add load, not reps", rir: "0–2", liftID: "crunch"),
-                    Exercise(key: "sa-pyramid", name: "PYRAMID", prescription: "", liftID: "pyramid"),
                 ]),
 
             TrainingDay(
@@ -373,7 +371,7 @@ public enum Plan {
         var out: [String] = []
         for d in order {
             for item in day(d).items {
-                guard let id = item.liftID, id != "pyramid", !seen.contains(id) else { continue }
+                guard let id = item.liftID, !seen.contains(id) else { continue }
                 seen.insert(id)
                 out.append(id)
             }

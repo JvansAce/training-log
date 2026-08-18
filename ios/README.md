@@ -15,9 +15,9 @@ Worker that merges state server-side. This is the same programme — the same
 schedule, the same maths, the same opinions — rebuilt as a real iOS app, with
 Apple's sync stack in place of the Worker.
 
-Both programmes are here: **Body** (four lifting days, tennis, cardio, the
-pyramid) and **Mind** (seven practices that unlock one at a time, the Saturday
-ladder, the charisma drills).
+Both programmes are here: **Body** (four lifting days, tennis, cardio) and
+**Mind** (seven practices that unlock one at a time, the Saturday ladder, the
+charisma drills).
 
 ## How it is put together
 
@@ -154,8 +154,8 @@ xcodebuild test -project BrandNewBody.xcodeproj -scheme BrandNewBody \
 The suite covers the ported maths rather than the screens — the least-squares
 fit against a known slope, the rolling 28-day window, the weigh-ins dropped
 around illness, the Mifflin-St Jeor calorie basis, progression and layoff
-targets, plate maths, the stall check, pyramid totals and vest weeks, the green
-streak's deload and time-off behaviour, every deload trigger and suppressor,
+targets, plate maths, the stall check, the pyramid's historical rep totals,
+the green streak's deload and time-off behaviour, every deload trigger and suppressor,
 build targets, and the Mind unlock gate.
 
 ## What changed on the way across
@@ -302,9 +302,11 @@ Rewrites the past:
   are keyed by position (`chr7`, `rung3`), so inserting one re-points history at
   a different technique. Append, don't insert.
 
-Two things are immune. The **pyramid** snapshots the cap and vest load in force
-when it was ticked, so its history survives any later change to the rules. And
-the **weight trend, fuel maths, build targets, deloads and time off** never read
+Two things are immune. The **pyramid's history** (now historical only — the
+circuit itself was removed from the live plan) snapshotted the cap and vest
+load in force when it was ticked, so old entries still read back correctly
+regardless of anything that happens to the rest of the plan. And the
+**weight trend, fuel maths, build targets, deloads and time off** never read
 the plan at all — though note `Fuel.basis` hardcodes rest days as day 0 and 4,
 so moving the rest day in `Plan` would not move the calorie target with it.
 

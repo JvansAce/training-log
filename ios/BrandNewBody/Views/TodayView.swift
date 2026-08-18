@@ -233,10 +233,7 @@ private struct VitalsRow: View {
             Sparkline(values: state.sortedWeights.suffix(30).map(\.kg))
 
             if let recoveryValue, recoveryValue < Deload.redRecovery {
-                Note("""
-                    Recovery is red today. If today's session has any give in it — Thursday's cardio, the \
-                    pyramid — this is the day to take it.
-                    """)
+                Note("Recovery is red today. If today's session has any give in it — Thursday's cardio — this is the day to take it.")
             }
 
             if isWhoopConnected, whoop.today != nil {
@@ -374,7 +371,7 @@ private struct OffPanel: View {
                           moves across a break this short; what you have lost is the tolerance for the \
                           volume, and that is what to rebuild first.
                           """)
-                    Note("The lift rows are suggesting a repeat instead of a jump until the gap closes\(ramp.days >= 7 ? ", and the vest week may have drifted while you were away — swap on the pyramid panel puts it back in step." : ".")")
+                    Note("The lift rows are suggesting a repeat instead of a jump until the gap closes.")
                 }
             }
         }
@@ -442,9 +439,7 @@ private struct DeloadPanel: View {
                         Halve the sets. Keep the weight. Stop every set 3–4 reps short of failure. Same \
                         exercises, same loads, roughly half the work and none of it taken close to the \
                         limit — cutting volume and effort rather than intensity is what keeps the strength \
-                        while the fatigue clears. The pyramid drops one round and skips the vest this week \
-                        rather than being skipped outright — it's conditioning, and it scales down with \
-                        everything else instead of dropping to zero. Tennis and the Thursday walk are fine.
+                        while the fatigue clears. Tennis and the Thursday walk are fine.
                         """)
                     HStack {
                         ActionButton(title: "End it early") { store.endDeloadEarly() }
@@ -456,9 +451,8 @@ private struct DeloadPanel: View {
                     VerdictLine(text: "\(signal.reason) That's the signal to back off for a week.",
                                 tone: .fast)
                     Note("""
-                        A deload here is half the sets at the same weight, stopped 3–4 reps short, and the \
-                        pyramid a round lighter with no vest. It is one week. The alternative is grinding \
-                        through it and losing the next three.
+                        A deload here is half the sets at the same weight, stopped 3–4 reps short. It is \
+                        one week. The alternative is grinding through it and losing the next three.
                         """)
                     HStack {
                         ActionButton(title: "Start a deload week", prominent: true) { store.startDeload() }
@@ -568,22 +562,19 @@ private struct SessionPanel: View {
                 collapsedSummary
             } else {
                 ForEach(displayedItems) { item in
-                    let isPyramid = item.key == "sa-pyramid"
                     TickRow(
-                        title: isPyramid ? Pyramid.itemName(state, on: activeDate) : item.displayName(state),
-                        subtitle: isPyramid ? Pyramid.itemPrescription : item.prescription,
+                        title: item.displayName(state),
+                        subtitle: item.prescription,
                         rir: item.rir,
                         isOn: canEdit && log.done.contains(item.key),
                         enabled: canEdit,
                         toggle: { store.toggleItem(item.key, on: activeDate) }
                     ) {
-                        if let liftID = item.liftID, liftID != "pyramid" {
+                        if let liftID = item.liftID {
                             LiftRow(liftID: liftID, item: item, canEdit: canEdit, activeDate: activeDate)
                         }
                     }
                 }
-
-                if dow == 6 { PyramidPanel(state: state) }
 
                 if let rest = day.restSeconds, canEdit {
                     ActionButton(title: "Start rest timer · \(RestTimer.format(rest))") {
@@ -858,11 +849,6 @@ private struct ActiveWorkoutView: View {
                         ForEach(items) { item in
                             exerciseCard(item)
                         }
-                        if day.dow == 6 {
-                            PyramidPanel(state: state)
-                                .padding(14)
-                                .background(Theme.slate, in: RoundedRectangle(cornerRadius: 14))
-                        }
                         Note("Every set here saves the moment you type it — Finish just ticks off whatever's left and takes you back to today.")
                             .padding(.top, 2)
                     }
@@ -956,7 +942,6 @@ private struct ActiveWorkoutView: View {
     }
 
     private func exerciseCard(_ item: Exercise) -> some View {
-        let isPyramid = item.key == "sa-pyramid"
         let isDone = log.done.contains(item.key)
         return VStack(alignment: .leading, spacing: 10) {
             Button {
@@ -974,11 +959,11 @@ private struct ActiveWorkoutView: View {
                 HStack(alignment: .top, spacing: 12) {
                     Checkbox(isOn: isDone)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(isPyramid ? Pyramid.itemName(state, on: activeDate) : item.displayName(state))
+                        Text(item.displayName(state))
                             .font(Theme.body(16, weight: .bold))
                             .foregroundStyle(Theme.bone)
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            let subtitle = isPyramid ? Pyramid.itemPrescription : item.prescription
+                            let subtitle = item.prescription
                             if !subtitle.isEmpty {
                                 Text(subtitle)
                                     .font(Theme.body(12.5))
@@ -996,7 +981,7 @@ private struct ActiveWorkoutView: View {
             .buttonStyle(.plain)
             .accessibilityAddTraits(isDone ? [.isSelected] : [])
 
-            if let liftID = item.liftID, liftID != "pyramid" {
+            if let liftID = item.liftID {
                 LiftRow(liftID: liftID, item: item, canEdit: true, activeDate: activeDate)
                     .padding(.leading, 34)
             }
@@ -1019,11 +1004,11 @@ private struct ActiveWorkoutView: View {
 
     /// Every lift trained today that just beat its own history — see
     /// `Lifts.newRecord` — and hasn't already had its trophy shown this
-    /// visit. Skips anything with no `liftID` (a warm-up, the pyramid line)
-    /// the same way the set-input fields already do.
+    /// visit. Skips anything with no `liftID` (a warm-up) the same way the
+    /// set-input fields already do.
     private func newRecords() -> [NewRecord] {
         items.compactMap { item -> NewRecord? in
-            guard let liftID = item.liftID, liftID != "pyramid", !acknowledgedPRs.contains(liftID) else { return nil }
+            guard let liftID = item.liftID, !acknowledgedPRs.contains(liftID) else { return nil }
             guard let improvement = Lifts.newRecord(state.liftHistory(liftID), on: activeDate) else { return nil }
             return NewRecord(id: liftID, name: item.displayName(state), improvement: improvement)
         }
@@ -1266,101 +1251,6 @@ private struct LiftRow: View {
             return index < existing.count ? existing[index] : nil
         }
         store.setSets(sets, liftID: liftID, on: date)
-    }
-}
-
-// MARK: - Pyramid
-
-private struct PyramidPanel: View {
-    var state: LogState
-    @Environment(AppStore.self) private var store
-
-    var body: some View {
-        let cap = state.pyramidCap
-        let totals = Pyramid.totals(cap: cap)
-        let climbing = cap < Pyramid.vestFromCap
-        let vestWeek = Pyramid.isVestWeek(state)
-        let vest = Pyramid.vestKg(state)
-
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                ActionButton(title: "– round") { store.adjustPyramidCap(by: -1) }
-                ActionButton(title: "+ round") { store.adjustPyramidCap(by: 1) }
-                PTag("cap \(cap)")
-            }
-
-            Note("Rounds 1–\(cap) adds up to " +
-                 totals.parts.map { "\($0.reps) \($0.name)" }.joined(separator: " · ") +
-                 " — \(totals.total) reps." +
-                 (cap < Pyramid.maxCap ? " One more round makes it \(Pyramid.totals(cap: cap + 1).total)." : ""))
-
-            HStack {
-                PTag(climbing ? "climbing" : vestWeek ? "vest week" : "bodyweight week",
-                     tint: vestWeek ? Theme.amber : Theme.muted)
-                if climbing {
-                    PTag("vest starts at cap \(Pyramid.vestFromCap)")
-                } else if vestWeek {
-                    ActionButton(title: "–") { store.adjustVest(by: -0.5) }
-                    Text(vest.map { String(format: "%.1f kg", $0) } ?? "– kg")
-                        .font(Theme.mono(13, weight: .bold))
-                        .foregroundStyle(Theme.bone)
-                    ActionButton(title: "+") { store.adjustVest(by: 0.5) }
-                    if state.vestKg != nil {
-                        ActionButton(title: "auto") { store.resetVestToAuto() }
-                    }
-                } else {
-                    PTag("next week: \(vest.map { String(format: "%.1f kg", $0) } ?? "–")")
-                }
-                if !climbing {
-                    ActionButton(title: "swap") { store.swapVestWeek() }
-                }
-            }
-
-            Note(climbing
-                ? "Set the cap to the round you can actually finish — that is what it is for, not a target you are failing. Add a round once \(cap) goes through cleanly. The vest stays off until cap \(Pyramid.vestFromCap), because until then adding a round is the cheaper way to progress."
-                : vestWeek
-                ? "Same \(cap) rounds as last week, wearing the vest — that is this week's progression. Add the round next week instead. Use swap if the vest lands on the wrong week."
-                : "Add a round if last week's \(cap) moved well. Next week is the same cap with the vest on. Use swap if the vest lands on the wrong week.")
-
-            if !state.pyramidLog.isEmpty {
-                Note("Recent pyramids: " + state.pyramidLog.keys.sorted().suffix(6).reversed()
-                    .map { date in
-                        let entry = state.pyramidLog[date]
-                        return "\(String(date.dropFirst(5))) cap \(entry?.cap ?? 0)" +
-                            ((entry?.vestKg).map { " +\(Lifts.fmt($0))kg" } ?? "")
-                    }
-                    .joined(separator: " · "))
-            }
-
-            // Past a certain cap the pyramid is quietly supplying more pull and
-            // push volume than the upper days prescribe, and every round added
-            // raises it again. Reported as exact rep counts with the trade
-            // named, rather than silently adjusting Tuesday and Friday: the
-            // conversion from circuit reps to equivalent working sets is a
-            // number nobody can defend, and a set removed without a visible
-            // reason is worse than one you chose to remove.
-            if cap >= Pyramid.overlapFromCap {
-                Note("At cap \(cap) the pyramid alone adds " +
-                     Pyramid.overlap(cap: cap).map { "\($0.reps) \($0.name)" }.joined(separator: " · ") +
-                     " to the week, on top of everything Tuesday and Friday already prescribe. If pressing or pulling goes stale before the next round feels easy, take a set off dips or the row before you take a round off here — the pyramid is the part that is meant to keep climbing.")
-            }
-
-            // The +/– buttons above still move the persisted, climbing cap —
-            // that's what they're for, and it has to keep working even
-            // mid-deload so a back-fill later this week isn't stuck editing
-            // the wrong number. What actually gets logged today is one round
-            // lighter regardless; this just says so, since the ticked
-            // checklist line already shows the reduced number without
-            // explaining why it doesn't match the cap set here.
-            if Pyramid.isDeloadedToday(state) {
-                Note("""
-                    Deload week: today's own pyramid logs at rounds 1–\(Pyramid.effectiveCap(state)) with no \
-                    vest, regardless of the cap above — the climb picks back up where it left off once the \
-                    week off ends.
-                    """, dimmed: true)
-            }
-        }
-        .padding(.top, 6)
     }
 }
 

@@ -1,11 +1,18 @@
 import Foundation
 
-/// The pyramid, precisely. Round N is N pull-ups, 2N dips, 3N push-ups, 4N
-/// sit-ups, 5N squats — the 1:2:3:4:5 ratio roughly matching how hard each
-/// movement is. Climbing "to cap C" means doing rounds 1 through C, so each
-/// movement's total is its ratio times the Cth triangular number. That makes
-/// total work grow with the SQUARE of the cap: 6 to 10 is not four more
-/// rounds, it is 2.6× the reps. Hence alternating load instead.
+/// The pyramid circuit's rep-count structure, kept for one reason: reading
+/// back whatever was already logged before the circuit was dropped from the
+/// plan. Round N was N pull-ups, 2N dips, 3N push-ups, 4N sit-ups, 5N squats
+/// — the 1:2:3:4:5 ratio roughly matching how hard each movement is. Climbing
+/// "to cap C" meant doing rounds 1 through C, so each movement's total was
+/// its ratio times the Cth triangular number.
+///
+/// `PyramidEntry`/`PyramidRecord` and the settings behind it (`pyramidCap`,
+/// `vestKg`, `vestPhase`) are untouched on purpose — anyone who logged a
+/// Saturday under the old plan keeps that history, in `SessionExport` and any
+/// backup, exactly as it was recorded. Only the live progression logic
+/// (cap/vest adjustment, the deload reduction, the checklist line itself) is
+/// gone, along with the schedule entry that drove it.
 public enum Pyramid {
 
     public struct Part: Identifiable, Equatable, Sendable {
@@ -23,113 +30,9 @@ public enum Pyramid {
         ("pull-ups", 1), ("dips", 2), ("push-ups", 3), ("sit-ups", 4), ("squats", 5),
     ]
 
-    public static let maxCap = 10
-
     public static func totals(cap: Int) -> Totals {
         let triangular = cap * (cap + 1) / 2
         let parts = ratio.map { Part(name: $0.name, reps: $0.k * triangular) }
         return Totals(parts: parts, total: parts.reduce(0) { $0 + $1.reps })
     }
-
-    // Suggested vest load scales with bodyweight so it tracks the bulk without
-    // being touched, and mildly with the cap, since a higher cap is evidence
-    // of capacity. Deliberately conservative — the usual guide for loaded
-    // calisthenic volume is 5–10% of bodyweight, and the rep count is already
-    // climbing quadratically underneath it.
-    public static let vestPercentMin = 0.05
-    public static let vestPercentMax = 0.08
-
-    public static func suggestedVestKg(_ state: LogState) -> Double? {
-        guard let bodyweight = state.latestAverage else { return nil }
-        let cap = min(maxCap, max(3, state.pyramidCap))
-        let percent = vestPercentMin + (Double(cap - 3) / 7) * (vestPercentMax - vestPercentMin)
-        return (bodyweight * percent * 2).rounded() / 2      // nearest 0.5 kg
-    }
-
-    /// Whatever the user set by hand, otherwise the suggestion.
-    public static func vestKg(_ state: LogState) -> Double? {
-        state.vestKg ?? suggestedVestKg(state)
-    }
-
-    /// Alternation does NOT start from week one. While the cap is still low,
-    /// adding a round is the cheap progression — cap 4 to 5 is 150 reps to
-    /// 225 — so just climb. The vest earns its place once a round starts
-    /// costing 100+ reps, which is around cap 6. Below that, alternating would
-    /// be adding load to someone who hasn't finished learning the movement
-    /// volume yet.
-    public static let vestFromCap = 6
-
-    /// The three movements the pyramid shares with the upper days — the reason
-    /// its climb is not free. Sit-ups and squats overlap too, but against work
-    /// the plan already treats as secondary; these are the ones whose weekly
-    /// rep count can quietly outgrow the sets prescribed for them.
-    public static let overlappingMovements = ["pull-ups", "dips", "push-ups"]
-
-    /// The cap at which the pyramid's own pull and push volume stops being a
-    /// rounding error against Tuesday and Friday. At cap 6 it is 21 pull-ups
-    /// and 42 dips a week; by cap 8, 36 and 72 — more dips than the upper days
-    /// prescribe for them.
-    ///
-    /// Deliberately surfaced as a note rather than folded into an automatic
-    /// adjustment. Converting reps of fatigued circuit work into an equivalent
-    /// number of working sets needs a coefficient nobody can defend — the
-    /// fractional-set methodology this plan follows counts *working* sets, and
-    /// calling 108 push-ups some number of chest sets would be an invented
-    /// figure wearing the clothes of a computed one. So this reports the real
-    /// counts, which are exact, and leaves the trade to the person doing them.
-    public static let overlapFromCap = 7
-
-    /// What the pyramid alone puts into the week for each movement it shares
-    /// with the upper days, at a given cap.
-    public static func overlap(cap: Int) -> [Part] {
-        totals(cap: cap).parts.filter { overlappingMovements.contains($0.name) }
-    }
-
-    /// Which programme week a date falls in. Taken from the date rather than
-    /// from `today`, so back-filling last Saturday asks about *last* Saturday's
-    /// week rather than this one's.
-    public static func weekIndex(_ state: LogState, on date: String) -> Int {
-        guard let n = DateKit.days(from: state.startDate, to: date) else { return state.weeksIn }
-        return max(0, n / 7)
-    }
-
-    /// `vestPhase` only flips which parity carries the vest, for when the real
-    /// schedule drifts out of step with the counter.
-    public static func isVestWeek(_ state: LogState, on date: String? = nil) -> Bool {
-        let week = date.map { weekIndex(state, on: $0) } ?? state.weeksIn
-        return state.pyramidCap >= vestFromCap && ((week + state.vestPhase) % 2) == 1
-    }
-
-    /// True only for today's own pyramid, during today's own deload week —
-    /// never for a back-filled past Saturday, which happened under whatever
-    /// was actually prescribed that week and shouldn't be rewritten by
-    /// hindsight. `on` mirrors the rest of this file's date-optional
-    /// convention: nil means "today".
-    public static func isDeloadedToday(_ state: LogState, on date: String? = nil) -> Bool {
-        (date ?? state.today) == state.today && Deload.inDeloadWeek(state)
-    }
-
-    /// The cap actually prescribed for `date` — one lower than the climbing
-    /// cap during today's own deload week, without ever touching the
-    /// persisted value itself. The climb resumes exactly where it left off
-    /// once the week off ends; alternating rounds and vest is paused, not
-    /// interrupted.
-    public static func effectiveCap(_ state: LogState, on date: String? = nil) -> Int {
-        guard isDeloadedToday(state, on: date) else { return state.pyramidCap }
-        return max(1, state.pyramidCap - 1)
-    }
-
-    /// The pyramid line as it appears on Saturday's checklist, with the cap
-    /// and — on a vest week — the load folded into the name. A deload week
-    /// drops both: one fewer round, and no vest regardless of parity.
-    public static func itemName(_ state: LogState, on date: String? = nil) -> String {
-        var name = "Holland pyramid — rounds 1–\(effectiveCap(state, on: date))"
-        if !isDeloadedToday(state, on: date), isVestWeek(state, on: date), let v = vestKg(state) {
-            name += " · vest \(String(format: "%.1f", v)) kg"
-        }
-        return name
-    }
-
-    public static let itemPrescription =
-        "round N = N pull-ups · 2N dips · 3N push-ups · 4N sit-ups · 5N squats"
 }

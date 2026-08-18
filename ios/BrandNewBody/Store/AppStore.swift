@@ -240,24 +240,6 @@ final class AppStore {
         var record = entry.record
         if record.done.contains(key) { record.done.remove(key) } else { record.done.insert(key) }
         entry.apply(record)
-        // Ticking the pyramid records what it actually was that week, so the
-        // history says "cap 6 + 5 kg" rather than just "done".
-        if key == "sa-pyramid" {
-            if record.done.contains(key) {
-                // Judged on the day being logged, not today, so back-filling
-                // last Saturday doesn't stamp this week's vest parity onto it
-                // — and `effectiveCap`/`isDeloadedToday` only ever reduce
-                // *today's* own pyramid, never a back-filled one, for the
-                // same reason. The persisted cap is still the current one —
-                // there is no record of what it was a fortnight ago, and
-                // inventing one would be worse.
-                upsertPyramid(date: date, cap: Pyramid.effectiveCap(state, on: date),
-                              vestKg: !Pyramid.isDeloadedToday(state, on: date) && Pyramid.isVestWeek(state, on: date)
-                                  ? Pyramid.vestKg(state) : nil)
-            } else {
-                deletePyramid(date: date)
-            }
-        }
         commit(entry)
     }
 
@@ -354,43 +336,6 @@ final class AppStore {
         }
         save()
         reload()
-    }
-
-    // MARK: - Pyramid
-
-    func adjustPyramidCap(by delta: Int) {
-        mutate { $0.pyramidCap = min(Pyramid.maxCap, max(1, $0.pyramidCap + delta)) }
-    }
-
-    func adjustVest(by delta: Double) {
-        let current = Pyramid.vestKg(state) ?? 0
-        mutate { $0.vestKg = max(0, ((current + delta) * 2).rounded() / 2) }
-    }
-
-    /// Back to tracking bodyweight.
-    func resetVestToAuto() {
-        mutate { $0.vestKg = nil }
-    }
-
-    /// Flips which parity of week carries the vest, for when the real schedule
-    /// has drifted out of step with the counter.
-    func swapVestWeek() {
-        mutate { $0.vestPhase = ($0.vestPhase + 1) % 2 }
-    }
-
-    private func upsertPyramid(date: String, cap: Int, vestKg: Double?) {
-        if let existing = fetch(PyramidEntry.self).first(where: { $0.date == date }) {
-            existing.cap = cap
-            existing.vestKg = vestKg
-        } else {
-            context.insert(PyramidEntry(date: date, cap: cap, vestKg: vestKg))
-        }
-    }
-
-    private func deletePyramid(date: String) {
-        for existing in fetch(PyramidEntry.self) where existing.date == date {
-            context.delete(existing)
-        }
     }
 
     // MARK: - Deload

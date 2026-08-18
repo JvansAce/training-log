@@ -254,7 +254,7 @@ final class CoreTests: XCTestCase {
     func testEveryLoggableLiftNamesItsSetCount() {
         for dow in Plan.order {
             for item in Plan.day(dow).items {
-                guard let id = item.liftID, id != "pyramid" else { continue }
+                guard item.liftID != nil else { continue }
                 let sets = Lifts.prescribedSets(item.prescription)
                 XCTAssertNotNil(sets, "\(item.key) names no set count: \(item.prescription)")
                 if let sets {
@@ -489,82 +489,6 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Pyramid.totals(cap: 6).total, 315)
         XCTAssertEqual(Pyramid.totals(cap: 10).total, 825)
         XCTAssertEqual(Pyramid.totals(cap: 4).parts.first?.reps, 10)   // pull-ups, 1× the triangular
-    }
-
-    func testVestStaysOffUntilTheCapEarnsIt() {
-        var state = makeState()
-        state.pyramidCap = 5
-        XCTAssertFalse(Pyramid.isVestWeek(state))
-        state.pyramidCap = 6
-        // weeksIn is 13 from the fixture's start date, so odd → vest week.
-        XCTAssertEqual(state.weeksIn % 2, 1)
-        XCTAssertTrue(Pyramid.isVestWeek(state))
-        state.vestPhase = 1
-        XCTAssertFalse(Pyramid.isVestWeek(state))
-    }
-
-    /// Back-filling last Saturday must ask about *last* Saturday's week, not
-    /// this one's, or the recorded pyramid carries the wrong vest parity.
-    func testVestWeekIsJudgedByTheDayBeingLogged() {
-        var state = makeState()
-        state.pyramidCap = 6
-        XCTAssertEqual(state.weeksIn, 13)
-        XCTAssertTrue(Pyramid.isVestWeek(state))                                  // week 13, odd
-        XCTAssertEqual(Pyramid.weekIndex(state, on: DateKit.adding(-7, to: today)), 12)
-        XCTAssertFalse(Pyramid.isVestWeek(state, on: DateKit.adding(-7, to: today)))
-        XCTAssertTrue(Pyramid.isVestWeek(state, on: today))
-    }
-
-    func testSuggestedVestScalesWithBodyweight() {
-        var state = makeState()
-        state.pyramidCap = 6
-        state.weights = [WeightRecord(date: today, kg: 80)]
-        // 5% + 3/7 of the 3-point spread = 6.28…% of 80 kg, to the nearest 0.5.
-        XCTAssertEqual(Pyramid.suggestedVestKg(state), 5.0)
-    }
-
-    /// The pull and push the pyramid quietly adds on top of the upper days —
-    /// reported exactly, because the rep counts are exact even though their
-    /// conversion into equivalent working sets would not be.
-    func testPyramidOverlapReportsThePullAndPushItAddsToTheWeek() {
-        let overlap = Pyramid.overlap(cap: 8)
-        XCTAssertEqual(overlap.map(\.name), ["pull-ups", "dips", "push-ups"],
-                       "in ratio order, and only the movements the upper days also train")
-        // Triangular number for cap 8 is 36, times the 1 · 2 · 3 ratio.
-        XCTAssertEqual(overlap.map(\.reps), [36, 72, 108])
-        XCTAssertEqual(Pyramid.overlap(cap: 4).map(\.reps), [10, 20, 30])
-    }
-
-    /// During today's own deload week, the pyramid logs a round lighter with
-    /// no vest — without ever touching the persisted, climbing cap itself.
-    func testPyramidDropsARoundAndTheVestDuringTodaysDeloadWeek() {
-        var state = makeState()
-        state.pyramidCap = 6
-        state.deloadLog = [today]
-        XCTAssertTrue(Pyramid.isDeloadedToday(state))
-        XCTAssertEqual(Pyramid.effectiveCap(state), 5)
-        XCTAssertFalse(Pyramid.itemName(state).contains("vest"))
-        // The persisted cap the +/– buttons move is untouched.
-        XCTAssertEqual(state.pyramidCap, 6)
-    }
-
-    /// A back-filled past Saturday happened under whatever was actually
-    /// prescribed that week — hindsight from today's deload must not rewrite
-    /// what gets logged for it.
-    func testPyramidDeloadReductionNeverAppliesToABackFilledDay() {
-        var state = makeState()
-        state.pyramidCap = 6
-        state.deloadLog = [today]
-        let yesterday = DateKit.adding(-1, to: today)
-        XCTAssertFalse(Pyramid.isDeloadedToday(state, on: yesterday))
-        XCTAssertEqual(Pyramid.effectiveCap(state, on: yesterday), 6)
-    }
-
-    func testNoDeloadMeansThePyramidCapIsUntouched() {
-        var state = makeState()
-        state.pyramidCap = 6
-        XCTAssertFalse(Pyramid.isDeloadedToday(state))
-        XCTAssertEqual(Pyramid.effectiveCap(state), 6)
     }
 
     // MARK: - Consistency
@@ -1140,7 +1064,7 @@ final class CoreTests: XCTestCase {
         state.pyramidLog[saturday] = PyramidRecord(cap: 4, vestKg: 5)
         let text = try XCTUnwrap(SessionExport.text(state, on: saturday))
         XCTAssertEqual(text.split(separator: "\n").first.map { String($0) },
-                       "Lower + Pyramid — \(saturday)")
+                       "Lower · Volume — \(saturday)")
         XCTAssertTrue(text.contains("rounds 1–4"), text)
         XCTAssertTrue(text.contains("vest 5 kg"), text)
         XCTAssertTrue(text.contains("10 pull-ups · 20 dips · 30 push-ups"), text)

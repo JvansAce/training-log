@@ -1,10 +1,10 @@
 import Foundation
 
-/// The programme is six days a week with one rest day and a pyramid whose
-/// volume grows with the square of the cap, and it had no mechanism at all for
-/// backing off. The evidence for a FIXED deload every Nth week is genuinely
-/// mixed, so this does not impose one — it watches the recovery data already
-/// being collected and says something when that data says to.
+/// The programme is six days a week with one rest day, and it had no
+/// mechanism at all for backing off. The evidence for a FIXED deload every
+/// Nth week is genuinely mixed, so this does not impose one — it watches the
+/// recovery data already being collected and says something when that data
+/// says to.
 ///
 /// The thresholds are WHOOP's own bands, which is where the readings
 /// originally came from: under 34% is red, 67%+ is green. Two independent

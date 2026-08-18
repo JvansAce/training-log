@@ -23,10 +23,7 @@ struct WeekView: View {
             WeekHero(state: state)
 
             Panel(title: "The week", tag: "4 lifts · 1 tennis · 1 cardio") {
-                Note("""
-                    Priority order when life gets busy: keep the four lifting days, drop Thursday cardio \
-                    first, the pyramid second.
-                    """)
+                Note("Priority order when life gets busy: keep the four lifting days, drop Thursday cardio first.")
                 ForEach(Plan.order, id: \.self) { dow in
                     DayRow(dow: dow, state: state)
                 }
@@ -135,10 +132,8 @@ private struct DayRow: View {
             Reveal(title: "\(items.count) item\(items.count == 1 ? "" : "s")", startsOpen: isToday) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(items) { item in
-                        let isPyramid = item.key == "sa-pyramid"
-                        Text((isPyramid ? Pyramid.itemName(state) : item.displayName(state)) +
-                             (item.prescription.isEmpty && !isPyramid ? "" :
-                                " — " + (isPyramid ? Pyramid.itemPrescription : item.prescription)))
+                        Text(item.displayName(state) +
+                             (item.prescription.isEmpty ? "" : " — " + item.prescription))
                             .font(Theme.body(12.5))
                             .foregroundStyle(Theme.muted)
                             .fixedSize(horizontal: false, vertical: true)

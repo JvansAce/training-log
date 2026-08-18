@@ -134,7 +134,7 @@ struct ProgressPage: View {
         var out: [LiftGroup] = []
         for dow in Plan.order {
             let ids = Plan.day(dow).items.compactMap(\.liftID)
-                .filter { $0 != "pyramid" && logged.contains($0) && !seen.contains($0) }
+                .filter { logged.contains($0) && !seen.contains($0) }
             ids.forEach { seen.insert($0) }
             if !ids.isEmpty { out.append(LiftGroup(dow: dow, ids: ids)) }
         }

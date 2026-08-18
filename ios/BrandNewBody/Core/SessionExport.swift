@@ -28,7 +28,7 @@ public enum SessionExport {
         var totalLoad = 0
 
         for item in day.items {
-            guard let id = item.liftID, id != "pyramid",
+            guard let id = item.liftID,
                   let record = state.liftHistory(id).first(where: { $0.date == date }),
                   !record.sets.isEmpty
             else { continue }
