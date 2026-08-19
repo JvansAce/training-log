@@ -30,16 +30,33 @@ struct TodayView: View {
 
     private var state: LogState { store.state }
     private var sectionOrder: [TodaySection] { TodaySectionOrderStore.load(from: sectionOrderRaw) }
-    /// Defaults to `activeDate`'s effective weekday — its own override if
-    /// one was set (see `LogState.effectiveDow`), so following a swapped
-    /// plan doesn't require re-tapping the day strip on every visit.
-    private var viewingDow: Int { viewing ?? state.effectiveDow(on: activeDate) }
+    /// Defaults to today's (or the day being backfilled's) own effective
+    /// weekday — its own override if one was set (see `LogState.
+    /// effectiveDow`), so following a swapped plan doesn't require
+    /// re-tapping the day strip on every visit. Reads `editingDate ??
+    /// state.today` directly rather than `activeDate` itself, since
+    /// `activeDate` below needs `viewingDow` to pick a date and can't also
+    /// be an input to it.
+    private var viewingDow: Int { viewing ?? state.effectiveDow(on: editingDate ?? state.today) }
     /// Only today's own effective day, or an explicitly back-filled day, can
     /// be written to. Comparing against `effectiveDow` rather than
     /// `state.todayDow` is what lets a swap actually be edited rather than
     /// just previewed.
-    private var canEdit: Bool { editingDate != nil || viewingDow == state.effectiveDow(on: activeDate) }
-    private var activeDate: String { editingDate ?? state.today }
+    private var canEdit: Bool {
+        editingDate != nil || viewingDow == state.effectiveDow(on: editingDate ?? state.today)
+    }
+    /// `editingDate` while back-filling; otherwise `state.today` for the
+    /// weekday actually in effect today, or — while merely previewing a
+    /// different rib — that weekday's own date within the current week.
+    /// A day already lived through (ticked by hand or imported from Hevy)
+    /// therefore reads as done in preview instead of always reading
+    /// today's still-empty record; a day later this week reads its own,
+    /// necessarily still-empty date, same as before.
+    private var activeDate: String {
+        if let editingDate { return editingDate }
+        let todayDow = state.effectiveDow(on: state.today)
+        return viewingDow == todayDow ? state.today : DateKit.dateInWeek(of: state.today, dow: viewingDow)
+    }
     private var isViewingToday: Bool { editingDate == nil && viewing == nil }
 
     var body: some View {
@@ -566,7 +583,7 @@ private struct SessionPanel: View {
                         title: item.displayName(state),
                         subtitle: item.prescription,
                         rir: item.rir,
-                        isOn: canEdit && log.done.contains(item.key),
+                        isOn: log.done.contains(item.key),
                         enabled: canEdit,
                         toggle: { store.toggleItem(item.key, on: activeDate) }
                     ) {
@@ -1366,12 +1383,11 @@ private struct MobilityPanel: View {
         return Plan.mobility + [focus]
     }
 
-    /// Gated on `canEdit` exactly as the rows are. Keyed by drill, not by
-    /// count, so unlike the session panel this can't rely on a different
-    /// weekday's keys being absent: previewing Friday on a Tuesday whose
-    /// mobility is done would otherwise collapse to "all done" above rows
-    /// that render unticked, because that is what a non-editable day shows.
-    private var done: Set<String> { canEdit ? state.day(activeDate).mobility : [] }
+    /// `activeDate` already resolves to the previewed weekday's own date
+    /// within the current week while merely previewing (not editing) —
+    /// see `TodayView.activeDate` — so reading it straight here shows a
+    /// day already lived through as done, the same as the session panel.
+    private var done: Set<String> { state.day(activeDate).mobility }
     private var doneCount: Int { drills.filter { done.contains($0.key) }.count }
     private var isComplete: Bool { doneCount == drills.count }
 
@@ -1410,7 +1426,7 @@ private struct MobilityPanel: View {
                 ForEach(drills) { drill in
                     TickRow(title: drill.name,
                             subtitle: drill.prescription,
-                            isOn: canEdit && done.contains(drill.key),
+                            isOn: done.contains(drill.key),
                             enabled: canEdit,
                             toggle: { store.toggleMobility(drill.key, on: activeDate) })
                 }

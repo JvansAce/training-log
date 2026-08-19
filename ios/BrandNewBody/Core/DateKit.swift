@@ -79,6 +79,14 @@ public enum DateKit {
         return adding(-((dow(day) + 6) % 7), to: day)
     }
 
+    /// The date, in the same Monday–Sunday week as `key`, for weekday `dow`
+    /// (JS-style: 0=Sun…6=Sat) — how a tapped weekday rib maps back to an
+    /// actual calendar date instead of always reading today's.
+    public static func dateInWeek(of key: String, dow: Int) -> String {
+        guard let anchor = date(key) else { return key }
+        return DateKit.key(adding((dow + 6) % 7, to: weekStart(anchor)))
+    }
+
     /// Inclusive run of day keys. Callers cap the span themselves.
     public static func range(from: String, to: String) -> [String] {
         guard let start = date(from), let end = date(to), start <= end else { return [] }

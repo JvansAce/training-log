@@ -57,6 +57,17 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(DateKit.key(DateKit.weekStart(monday)), "2026-08-03")
     }
 
+    /// How Today's weekday strip maps a tapped rib back to a real date —
+    /// the same Monday–Sunday week `weekStart` uses, so the mapping never
+    /// silently drifts by one against it.
+    func testDateInWeekMapsEveryWeekdayOntoTheSameMondayStartedWeek() {
+        let sunday = "2026-08-09"
+        XCTAssertEqual(DateKit.dateInWeek(of: sunday, dow: 1), "2026-08-03", "Monday")
+        XCTAssertEqual(DateKit.dateInWeek(of: sunday, dow: 2), "2026-08-04", "Tuesday")
+        XCTAssertEqual(DateKit.dateInWeek(of: sunday, dow: 6), "2026-08-08", "Saturday")
+        XCTAssertEqual(DateKit.dateInWeek(of: sunday, dow: 0), "2026-08-09", "Sunday, same as the anchor itself")
+    }
+
     func testDaysBetweenIsInclusiveOfNeither() {
         XCTAssertEqual(DateKit.days(from: "2026-08-01", to: "2026-08-06"), 5)
         XCTAssertEqual(DateKit.days(from: "2026-08-06", to: "2026-08-01"), -5)

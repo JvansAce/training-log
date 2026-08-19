@@ -44,8 +44,13 @@ struct Sparkline: View {
                     LineMark(x: .value("Index", index), y: .value("kg", value))
                         .lineStyle(StrokeStyle(lineWidth: ChartSpec.lineWidth, lineCap: .round, lineJoin: .round))
                         .interpolationMethod(.catmullRom)
+                        .foregroundStyle(tint)
+                    // `ChartSpec.areaOpacity` here, not the line's own full
+                    // tint — a solid-filled AreaMark reads as a slab, not a
+                    // shaded area under the curve.
                     AreaMark(x: .value("Index", index), y: .value("kg", value))
                         .interpolationMethod(.catmullRom)
+                        .foregroundStyle(tint.opacity(ChartSpec.areaOpacity))
                 }
                 if let last = values.indices.last {
                     PointMark(x: .value("Index", last), y: .value("kg", values[last]))
@@ -53,13 +58,13 @@ struct Sparkline: View {
                         .symbolSize(50)
                 }
             }
-            .foregroundStyle(tint)
             .chartXAxis(.hidden)
             .chartYAxis(.hidden)
             // Padded on both sides so a flat run of identical weigh-ins still
             // gets a real, non-zero range rather than a degenerate one.
             .chartYScale(domain: (low - 0.4)...(high + 0.4))
             .frame(height: 44)
+            .clipped()
             .accessibilityHidden(true)
         }
     }
@@ -87,14 +92,19 @@ struct WeightChart: View {
                         LineMark(x: .value("Date", record.date), y: .value("kg", record.kg))
                             .lineStyle(StrokeStyle(lineWidth: ChartSpec.lineWidth, lineCap: .round, lineJoin: .round))
                             .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Theme.red)
+                        // `ChartSpec.areaOpacity` here, not the line's own
+                        // full tint — a solid-filled AreaMark reads as a
+                        // slab, not a shaded area under the curve.
                         AreaMark(x: .value("Date", record.date), y: .value("kg", record.kg))
                             .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Theme.red.opacity(ChartSpec.areaOpacity))
                     }
                 }
-                .foregroundStyle(Theme.red)
                 .chartXAxis(.hidden)
                 .chartYScale(domain: low...high)
                 .frame(height: 150)
+                .clipped()
 
                 HStack {
                     Text(records.first?.date ?? "")
